@@ -1,0 +1,7 @@
+.venv/
+frontend/node_modules/
+frontend/.next/
+backend/financeiro_app.db
+downloads/
+**/__pycache__/
+*.pyc

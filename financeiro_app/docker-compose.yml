@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: financeiro_app
+      POSTGRES_USER: financeiro
+      POSTGRES_PASSWORD: financeiro
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://financeiro:financeiro@db:5432/financeiro_app
+      CORS_ORIGINS: http://localhost:3000
+      AUTOMATION_WORKSPACE: /workspace
+    volumes:
+      - ../:/workspace
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      NEXT_PUBLIC_API_BASE: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pg_data:
