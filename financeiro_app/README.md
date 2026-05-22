@@ -52,6 +52,32 @@ Serviços:
 - Backend: `http://localhost:8000`
 - Docs API: `http://localhost:8000/docs`
 
+## Deploy (Vercel + Render)
+
+### Arquitetura recomendada
+
+- Frontend (`financeiro_app/frontend`) no Vercel (Root Directory: `financeiro_app/frontend`).
+- Backend (`financeiro_app/backend`) no Render (Blueprint via `render.yaml` na raiz do repositório).
+
+### Backend no Render
+
+1. No Render, clique em **New +** -> **Blueprint** e selecione o repositório.
+2. O arquivo `render.yaml` criará o serviço `financeiro-app-api`.
+3. Configure as variáveis de ambiente:
+   - `DATABASE_URL`
+   - `CORS_ORIGINS` (incluindo seu domínio Vercel)
+   - `AUTOMATION_WORKSPACE=/opt/render/project/src/financeiro_app`
+   - `RECOVER_INTERRUPTED_RUNS=true`
+
+### Frontend no Vercel
+
+1. No Vercel, importe o repositório.
+2. Defina o **Root Directory** como `financeiro_app/frontend`.
+3. Configure:
+   - `NEXT_PUBLIC_API_BASE=https://SUA-API.onrender.com`
+
+Use `backend/.env.example` e `frontend/.env.example` como referência.
+
 ## Fluxo atual
 
 1. Seleciona tipo de conciliação (`bb` ou `itau_sigra`)

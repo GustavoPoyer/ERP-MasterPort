@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: financeiro-app-api
+    env: python
+    rootDir: financeiro_app/backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: AUTOMATION_WORKSPACE
+        value: /opt/render/project/src/financeiro_app
+      - key: RECOVER_INTERRUPTED_RUNS
+        value: "true"
