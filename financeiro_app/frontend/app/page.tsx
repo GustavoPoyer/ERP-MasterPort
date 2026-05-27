@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 
 type AutomationInfo = {
   key: string;
@@ -174,6 +175,7 @@ export default function HomePage() {
   const [loginPassword, setLoginPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [hideLandingTopbar, setHideLandingTopbar] = useState(false);
   const [activeSector, setActiveSector] = useState<SectorKey>("financeiro");
   const [operationsView, setOperationsView] = useState<OperationsView>("importacao");
   const [automations, setAutomations] = useState<AutomationInfo[]>([]);
@@ -641,6 +643,31 @@ export default function HomePage() {
     setFilterValue("");
   }, [selectedRun?.id, bankView]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let lastY = window.scrollY;
+    const minY = 80;
+    const minDelta = 10;
+
+    const onScroll = () => {
+      const currentY = window.scrollY;
+      const delta = currentY - lastY;
+      if (Math.abs(delta) < minDelta) return;
+
+      if (currentY < minY) {
+        setHideLandingTopbar(false);
+      } else if (delta > 0) {
+        setHideLandingTopbar((prev) => (prev ? prev : true));
+      } else {
+        setHideLandingTopbar((prev) => (prev ? false : prev));
+      }
+      lastY = currentY;
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   if (!authReady) {
     return (
       <main className="app-shell">
@@ -654,36 +681,148 @@ export default function HomePage() {
 
   if (!authToken || !currentUser) {
     return (
-      <main className="app-shell">
-        <section className="panel" style={{ maxWidth: 460, margin: "64px auto" }}>
-          <h2>Acesso ao Financeiro App</h2>
-          <p className="subtitle">Entre com seu usuário para acessar o módulo Financeiro.</p>
-          <div className="filter-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 10 }}>
-            <input
-              type="text"
-              placeholder="Usuário"
-              value={loginUsername}
-              onChange={(e) => setLoginUsername(e.target.value)}
-              autoComplete="username"
-            />
-            <input
-              type="password"
-              placeholder="Senha"
-              value={loginPassword}
-              onChange={(e) => setLoginPassword(e.target.value)}
-              autoComplete="current-password"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleLogin().catch(() => null);
-              }}
-            />
-            <button type="button" onClick={() => handleLogin().catch(() => null)} disabled={authLoading}>
-              {authLoading ? "Entrando..." : "Entrar"}
-            </button>
+      <main className="lp-shell">
+        <header className={`lp-topbar ${hideLandingTopbar ? "lp-topbar--hidden" : ""}`}>
+          <div className="lp-brand">
+            <Image src="/brand/logo-completa-rbg.png" alt="MasterPort" width={460} height={110} className="lp-brand-logo" />
           </div>
-          <p className="muted" style={{ marginTop: 10 }}>
-            Usuários padrão: <b>admin</b> / <b>admin123</b> ou <b>financeiro</b> / <b>finance123</b>
-          </p>
-          {authError && <p className="error">{authError}</p>}
+          <nav className="lp-nav">
+            <span>Módulos</span>
+            <span>Plataforma</span>
+            <span>Governança</span>
+          </nav>
+          <span className="lp-login-tag">Entrar -&gt;</span>
+        </header>
+
+        <section className="lp-hero-grid">
+          <article className="lp-hero-copy">
+            <span className="lp-kicker">
+              <span className="lp-kicker-dot" />
+              Comércio Exterior + Financeiro
+            </span>
+            <h1>O ERP que move sua operação global.</h1>
+            <p>
+              MasterPort centraliza processos de Comex, automatiza conciliações bancárias (Banco do Brasil e Itaú/
+              SIGRA) e dá visibilidade ponta a ponta em uma plataforma única, segura e pronta para escalar por todos
+              os setores.
+            </p>
+            <div className="lp-cta-row">
+              <button type="button" className="lp-btn-primary">
+                Acessar o sistema
+              </button>
+              <button type="button" className="lp-btn-ghost">
+                Conhecer os módulos
+              </button>
+            </div>
+          </article>
+
+          <article className="lp-login-card">
+            <div className="login-hero">
+              <span className="lp-access-tag">Acesso restrito</span>
+              <h2>Entrar no MasterPort</h2>
+              <p>Use suas credenciais corporativas.</p>
+            </div>
+            <div className="login-form">
+              <label className="login-label" htmlFor="login-username">
+                Usuário
+              </label>
+              <input
+                id="login-username"
+                type="text"
+                placeholder="nome.sobrenome"
+                value={loginUsername}
+                onChange={(e) => setLoginUsername(e.target.value)}
+                autoComplete="username"
+              />
+              <div className="lp-password-row">
+                <label className="login-label" htmlFor="login-password">
+                  Senha
+                </label>
+                <button type="button" className="lp-forgot-btn">
+                  Esqueceu?
+                </button>
+              </div>
+              <input
+                id="login-password"
+                type="password"
+                placeholder="Digite sua senha"
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
+                autoComplete="current-password"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleLogin().catch(() => null);
+                }}
+              />
+              <button
+                type="button"
+                className="lp-login-submit"
+                onClick={() => handleLogin().catch(() => null)}
+                disabled={authLoading}
+              >
+                {authLoading ? "Entrando..." : "Entrar"}
+              </button>
+              {authError && <p className="error">{authError}</p>}
+            </div>
+            <p className="login-help">Ambiente monitorado. Todas as ações de login são registradas para auditoria.</p>
+          </article>
+        </section>
+
+        <section className="lp-module-grid">
+          <article className="lp-module-card">
+            <span className="lp-metric-icon">+</span>
+            <h3>Menos trabalho manual</h3>
+            <p>Conciliações que levavam horas em planilhas, executadas em minutos.</p>
+          </article>
+          <article className="lp-module-card">
+            <span className="lp-metric-icon">o</span>
+            <h3>Visibilidade total</h3>
+            <p>Logs de execução, histórico de cargas e status em tempo real.</p>
+          </article>
+          <article className="lp-module-card">
+            <span className="lp-metric-icon">#</span>
+            <h3>Governanca auditada</h3>
+            <p>Rastreabilidade ponta a ponta com controle de acesso por papel.</p>
+          </article>
+        </section>
+
+        <section className="lp-flow-section">
+          <div className="lp-flow-header">
+            <span className="lp-flow-kicker">Como funciona na prática</span>
+            <h2>Uma jornada simples para operar e escalar.</h2>
+            <p>
+              Da entrada dos documentos ao acompanhamento dos resultados, o fluxo foi pensado para reduzir atrito no dia
+              a dia do financeiro.
+            </p>
+          </div>
+
+          <div className="lp-flow-steps">
+            <article className="lp-flow-step">
+              <span className="lp-flow-index">01</span>
+              <h3>Monte a rodada</h3>
+              <p>Selecione banco, anexe extratos e comprovantes, e valide os arquivos obrigatórios.</p>
+            </article>
+            <article className="lp-flow-step">
+              <span className="lp-flow-index">02</span>
+              <h3>Execute em um clique</h3>
+              <p>Dispare a automação e acompanhe o status da execução sem trocar de tela.</p>
+            </article>
+            <article className="lp-flow-step">
+              <span className="lp-flow-index">03</span>
+              <h3>Analise e audite</h3>
+              <p>Consulte logs, pendências e histórico consolidado com rastreabilidade ponta a ponta.</p>
+            </article>
+          </div>
+
+          <div className="lp-flow-showcase">
+            <article className="lp-flow-panel">
+              <h4>Visão Operacional</h4>
+              <p>KPIs e filas em tempo real para saber exatamente onde agir.</p>
+            </article>
+            <article className="lp-flow-panel">
+              <h4>Governança</h4>
+              <p>Controle por perfil, trilha de ações e contexto completo para auditoria.</p>
+            </article>
+          </div>
         </section>
       </main>
     );
@@ -693,7 +832,7 @@ export default function HomePage() {
     <div className="platform-shell">
       <aside className="platform-sidebar">
         <div className="brand-block">
-          <div className="brand-title">Hub Corporativo</div>
+          <Image src="/brand/logo-simples.png" alt="Símbolo MasterPort" width={64} height={64} className="brand-logo-icon" />
           <div className="brand-subtitle">Aplicativos por setor</div>
         </div>
         <nav className="sector-nav">
