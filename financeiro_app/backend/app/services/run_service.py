@@ -149,6 +149,7 @@ def _ingest_run_output(db: Session, run: ReconciliationRun) -> None:
                     run_id=run.id,
                     sheet_name=sheet,
                     extrato_id=_str_or_empty(row.get("ID Extrato", "")),
+                    aba_extrato=_str_or_empty(row.get("Aba Extrato", "")),
                     data=_str_or_empty(row.get("Data", "")),
                     valor_extrato=_float_or_zero(row.get("Valor Extrato", 0)),
                     saldo=_float_or_zero(
@@ -181,6 +182,48 @@ def _ingest_run_output(db: Session, run: ReconciliationRun) -> None:
         )
     )
     db.commit()
+
+
+def _allowed_output_roots() -> list[Path]:
+    workspace = Path(settings.automation_workspace).resolve()
+    app_root = Path(__file__).resolve().parents[2]
+    roots = [
+        workspace,
+        workspace / "output",
+        app_root,
+        app_root / "output",
+    ]
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(root)
+    return unique
+
+
+def _path_is_under(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def resolve_run_output_file(run: ReconciliationRun) -> Path:
+    output = (run.output_path or "").strip()
+    if not output:
+        raise FileNotFoundError("output_path vazio")
+    file_path = Path(output).resolve()
+    if not file_path.is_file():
+        raise FileNotFoundError(str(file_path))
+    if file_path.suffix.lower() not in {".xlsx", ".xls"}:
+        raise ValueError("Arquivo de saída inválido.")
+    if not any(_path_is_under(file_path, root) for root in _allowed_output_roots()):
+        raise ValueError("Caminho de saída não permitido.")
+    return file_path
 
 
 def _safe_filename(name: str) -> str:
@@ -294,6 +337,9 @@ def execute_run(run_id: int) -> None:
 
         runtime_parameters = dict(parameters or {})
         runtime_parameters["_log_callback"] = on_script_log
+        runtime_parameters["run_id"] = run.id
+        if staged_dir:
+            runtime_parameters["input_folder"] = staged_dir
 
         try:
             result = adapter.run(settings.automation_workspace, runtime_parameters)

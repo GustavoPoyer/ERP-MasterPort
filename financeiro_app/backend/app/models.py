@@ -62,6 +62,7 @@ class RunStatusRow(Base):
     run_id: Mapped[int] = mapped_column(Integer, index=True)
     sheet_name: Mapped[str] = mapped_column(String(120), default="")
     extrato_id: Mapped[str] = mapped_column(String(80), default="")
+    aba_extrato: Mapped[str] = mapped_column(String(80), default="")
     data: Mapped[str] = mapped_column(String(30), default="")
     valor_extrato: Mapped[float] = mapped_column(Float, default=0.0)
     saldo: Mapped[float] = mapped_column(Float, default=0.0)
@@ -85,6 +86,7 @@ class AppUser(Base):
     sector: Mapped[str] = mapped_column(String(80), default="financeiro")
     role: Mapped[str] = mapped_column(String(80), default="operator")
     is_active: Mapped[int] = mapped_column(Integer, default=1)
+    approval_status: Mapped[str] = mapped_column(String(30), default="approved", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,
@@ -100,4 +102,15 @@ class AppSession(Base):
     user_id: Mapped[int] = mapped_column(Integer, index=True)
     token: Mapped[str] = mapped_column(String(256), unique=True, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AppPasswordReset(Base):
+    __tablename__ = "app_password_resets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    token_hash: Mapped[str] = mapped_column(String(128), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { KivoAssistant } from "../components/KivoAssistant";
+import { KivoRobot } from "../components/KivoRobot";
 
 type AutomationInfo = {
   key: string;
@@ -45,6 +47,7 @@ type MatchRow = {
 type StatusRow = {
   sheet_name: string;
   extrato_id: string;
+  aba_extrato?: string;
   data: string;
   valor_extrato: number;
   saldo: number;
@@ -73,12 +76,20 @@ type DocumentSlot = {
 };
 
 type SectorKey = "financeiro" | "pedro" | "rh" | "operacoes";
+type PlatformView = "inicio" | "configuracoes" | SectorKey;
 type OperationsView = "importacao" | "exportacao";
 type AuthUser = {
   id: number;
   username: string;
   sector: string;
   role: string;
+};
+
+type PendingUser = {
+  id: number;
+  username: string;
+  requested_sector: string;
+  created_at: string;
 };
 
 const runtimeHost = typeof window !== "undefined" && window.location?.hostname ? window.location.hostname : "localhost";
@@ -136,6 +147,99 @@ const SECTOR_MENU: { key: SectorKey; label: string; subtitle: string }[] = [
   { key: "operacoes", label: "Operações", subtitle: "Rotinas internas" },
 ];
 
+function platformPageTitle(view: PlatformView): string {
+  if (view === "inicio") return "Início";
+  if (view === "configuracoes") return "Configurações";
+  if (view === "financeiro") return "Setor Financeiro";
+  if (view === "pedro") return "Setor Pedro";
+  if (view === "rh") return "Setor RH";
+  return "Setor de Operações";
+}
+
+function platformPageSubtitle(view: PlatformView): string {
+  if (view === "inicio") return "Visão geral da plataforma KIVO";
+  if (view === "configuracoes") return "Conta, segurança e preferências do ambiente";
+  return SECTOR_MENU.find((s) => s.key === view)?.subtitle ?? "";
+}
+
+function sectorLabel(key: string): string {
+  return SECTOR_MENU.find((s) => s.key === key)?.label ?? key;
+}
+
+function roleLabel(role: string): string {
+  if (role === "admin") return "Administrador";
+  if (role === "operator") return "Operador";
+  return role;
+}
+
+function parseApiErrorDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const first = detail[0];
+    if (first && typeof first === "object" && "msg" in first) {
+      return String((first as { msg: string }).msg);
+    }
+  }
+  return fallback;
+}
+
+function SettingsRailIcon() {
+  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
+  return (
+    <svg {...common}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6" />
+    </svg>
+  );
+}
+
+function HomeRailIcon() {
+  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
+  return (
+    <svg {...common}>
+      <path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 01-1.5 1.5H5.5A1.5 1.5 0 014 19v-8.5z" />
+      <path d="M9.5 20.5V13h5v7.5" />
+    </svg>
+  );
+}
+
+function SectorRailIcon({ sector }: { sector: SectorKey }) {
+  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
+  if (sector === "financeiro") {
+    return (
+      <svg {...common}>
+        <rect x="3" y="6" width="18" height="13" rx="2" />
+        <path d="M3 10h18" />
+        <path d="M7 15h4" />
+        <circle cx="16" cy="15" r="1.25" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+  if (sector === "pedro") {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5 20c0-3.5 3.1-6 7-6s7 2.5 7 6" />
+      </svg>
+    );
+  }
+  if (sector === "rh") {
+    return (
+      <svg {...common}>
+        <circle cx="9" cy="9" r="2.5" />
+        <circle cx="16" cy="10" r="2" />
+        <path d="M4 19c0-2.5 2.2-4.5 5-4.5M15 19c0-2 1.6-3.5 3.5-3.5" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
+      <path d="M12 12l8-4.5M12 12v9M12 12L4 7.5" />
+    </svg>
+  );
+}
+
 function statusClass(status: string): string {
   const s = status.toLowerCase();
   if (s.includes("completed")) return "status-pill status-completed";
@@ -144,45 +248,215 @@ function statusClass(status: string): string {
   return "status-pill status-queued";
 }
 
-function monthKeyFromDate(dateValue: string): string {
-  const raw = (dateValue || "").trim();
-  const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return "sem-data";
-  return `${m[3]}-${m[2]}`;
+const EXTRATO_TAB_MONTH_ORDER = [
+  "janeiro",
+  "fevereiro",
+  "marco",
+  "abril",
+  "maio",
+  "junho",
+  "julho",
+  "agosto",
+  "setembro",
+  "outubro",
+  "novembro",
+  "dezembro",
+] as const;
+
+function normalizeExtratoTabKey(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
 }
 
-function monthLabelFromKey(key: string): string {
-  if (key === "sem-data") return "Sem data";
-  const [year, month] = key.split("-");
-  const mm = Number(month);
-  const yy = year?.slice(-2) || "";
-  const labels = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-  return `${labels[(mm || 1) - 1] || "Mês"} ${yy}`;
+function monthKeyFromDate(dateValue: string): string {
+  const raw = (dateValue || "").trim();
+  let m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}`;
+  m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}`;
+  const parsed = Date.parse(raw);
+  if (!Number.isNaN(parsed)) {
+    const d = new Date(parsed);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    return `${d.getFullYear()}-${mm}`;
+  }
+  return "sem-data";
+}
+
+function extratoTabOrder(key: string): number {
+  if (key === "sem-aba" || key === "sem-data") return 1000;
+  const normalized = normalizeExtratoTabKey(key);
+  for (let i = 0; i < EXTRATO_TAB_MONTH_ORDER.length; i++) {
+    if (normalized.startsWith(EXTRATO_TAB_MONTH_ORDER[i])) return i;
+  }
+  return 500;
+}
+
+/** Chave da aba do extrato (MAIO, JANEIRO26…); fallback por data em execuções antigas. */
+function extratoTabKeyFromRow(row: StatusRow): string {
+  const aba = (row.aba_extrato || "").trim();
+  if (aba) return normalizeExtratoTabKey(aba);
+  const fromDate = monthKeyFromDate(row.data);
+  return fromDate === "sem-data" ? "sem-aba" : fromDate;
+}
+
+function extratoTabLabelFromKey(key: string): string {
+  if (key === "sem-aba" || key === "sem-data") return "Sem aba";
+  if (/^\d{4}-\d{2}$/.test(key)) {
+    const [year, month] = key.split("-");
+    const mm = Number(month);
+    const yy = year?.slice(-2) || "";
+    const labels = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    return `${labels[(mm || 1) - 1] || "Mês"} ${yy}`;
+  }
+  const normalized = normalizeExtratoTabKey(key);
+  const monthLabels: Record<string, string> = {
+    janeiro: "Janeiro",
+    fevereiro: "Fevereiro",
+    marco: "Março",
+    abril: "Abril",
+    maio: "Maio",
+    junho: "Junho",
+    julho: "Julho",
+    agosto: "Agosto",
+    setembro: "Setembro",
+    outubro: "Outubro",
+    novembro: "Novembro",
+    dezembro: "Dezembro",
+  };
+  for (const month of EXTRATO_TAB_MONTH_ORDER) {
+    if (!normalized.startsWith(month)) continue;
+    const suffix = normalized.slice(month.length);
+    const yearMatch = suffix.match(/^(\d{2,4})$/);
+    const base = monthLabels[month] || month;
+    if (yearMatch) {
+      const yy = yearMatch[1].length === 4 ? yearMatch[1].slice(-2) : yearMatch[1];
+      return `${base} ${yy}`;
+    }
+    return base;
+  }
+  return key;
+}
+
+/** Linhas de saldo de conta (não são pagamentos) — ocultas só nos KPIs, não na tabela. */
+function isExtratoBalanceSnapshot(row: StatusRow): boolean {
+  const normalized = (row.favorecido_descricao || "")
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, " ");
+  return normalized === "S A L D O" || normalized === "SALDO" || normalized.includes("SALDO ANTERIOR");
 }
 
 function parseBrDateToTs(dateValue: string): number {
   const raw = (dateValue || "").trim();
   const m = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (!m) return Number.NEGATIVE_INFINITY;
-  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
+  const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3])).getTime();
+  const parsed = Date.parse(raw);
+  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+}
+
+function AuthPasswordField({
+  id,
+  placeholder,
+  value,
+  visible,
+  onToggleVisible,
+  autoComplete,
+  onChange,
+  onEnter,
+}: {
+  id: string;
+  placeholder: string;
+  value: string;
+  visible: boolean;
+  onToggleVisible: () => void;
+  autoComplete: string;
+  onChange: (value: string) => void;
+  onEnter?: () => void;
+}) {
+  return (
+    <div className="auth-screen-password-wrap">
+      <input
+        id={id}
+        type={visible ? "text" : "password"}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onEnter?.();
+        }}
+      />
+      <button
+        type="button"
+        className="auth-screen-password-toggle"
+        onClick={onToggleVisible}
+        title={visible ? "Pedir pro robô não olhar" : "Deixar o robô espiar a senha"}
+        aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
+        aria-pressed={visible}
+      >
+        <KivoRobot mood={visible ? "peek" : "shy"} />
+      </button>
+    </div>
+  );
 }
 
 export default function HomePage() {
   const [authReady, setAuthReady] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [guestView, setGuestView] = useState<"landing" | "auth" | "forgot" | "reset">("landing");
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState("");
+  const [resetToken, setResetToken] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showNewPasswordConfirm, setShowNewPasswordConfirm] = useState(false);
+  const [changeCurrentPassword, setChangeCurrentPassword] = useState("");
+  const [changeNewPassword, setChangeNewPassword] = useState("");
+  const [changeNewPasswordConfirm, setChangeNewPasswordConfirm] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [adminBusy, setAdminBusy] = useState(false);
+  const [adminMessage, setAdminMessage] = useState("");
+  const [adminError, setAdminError] = useState("");
+  const [activeSessionCount, setActiveSessionCount] = useState(0);
+  const [adminLookupUsername, setAdminLookupUsername] = useState("");
+  const [adminResetLink, setAdminResetLink] = useState("");
+  const [adminResetLinkFor, setAdminResetLinkFor] = useState("");
+  const [showAuthPassword, setShowAuthPassword] = useState(false);
+  const [showAuthPasswordConfirm, setShowAuthPasswordConfirm] = useState(false);
+  const [registerSector, setRegisterSector] = useState<SectorKey>("financeiro");
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [authSuccess, setAuthSuccess] = useState("");
+  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
+  const [pendingUsersLoading, setPendingUsersLoading] = useState(false);
+  const [pendingActionId, setPendingActionId] = useState<number | null>(null);
+  const [approvalSectorByUser, setApprovalSectorByUser] = useState<Record<number, SectorKey>>({});
   const [hideLandingTopbar, setHideLandingTopbar] = useState(false);
-  const [activeSector, setActiveSector] = useState<SectorKey>("financeiro");
+  const [activeView, setActiveView] = useState<PlatformView>("inicio");
   const [operationsView, setOperationsView] = useState<OperationsView>("importacao");
   const [automations, setAutomations] = useState<AutomationInfo[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [bankView, setBankView] = useState<"bb" | "itau_sigra">("bb");
-  const [analysisView, setAnalysisView] = useState<"planilha" | "log">("planilha");
+  const [analysisView, setAnalysisView] = useState<"planilha" | "matches" | "log">("planilha");
+  const [matchSort, setMatchSort] = useState<{ field: "data" | "valor"; direction: "desc" | "asc" }>({
+    field: "data",
+    direction: "desc",
+  });
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>("todos");
   const [filterField, setFilterField] = useState<
     "geral" | "data" | "id_extrato" | "descricao" | "ref_sigra" | "status"
@@ -249,31 +523,30 @@ export default function HomePage() {
     () => slotConfig.some((slot) => slot.required && (filesBySlot[slot.key]?.length ?? 0) === 0),
     [filesBySlot, slotConfig],
   );
-  const statusesWithoutSaldo = useMemo(() => {
-    const rows = dataset?.statuses ?? [];
-    return rows.filter((row) => {
-      const searchable = `${row.extrato_id} ${row.favorecido_descricao}`.toLowerCase();
-      return !searchable.includes("saldo");
-    });
-  }, [dataset?.statuses]);
+  const allStatuses = useMemo(() => dataset?.statuses ?? [], [dataset?.statuses]);
+  const statusesForKpi = useMemo(
+    () => allStatuses.filter((row) => !isExtratoBalanceSnapshot(row)),
+    [allStatuses],
+  );
   const monthTabs = useMemo(() => {
-    const values = statusesWithoutSaldo;
+    const values = allStatuses;
     const map = new Map<string, number>();
     values.forEach((row) => {
-      const key = monthKeyFromDate(row.data);
+      const key = extratoTabKeyFromRow(row);
       map.set(key, (map.get(key) ?? 0) + 1);
     });
-    const keys = Array.from(map.keys()).sort((a, b) => (a < b ? 1 : -1));
+    const keys = Array.from(map.keys()).sort((a, b) => extratoTabOrder(a) - extratoTabOrder(b));
     return [
       { key: "todos", label: "Todos", count: values.length },
-      ...keys.map((key) => ({ key, label: monthLabelFromKey(key), count: map.get(key) ?? 0 })),
+      ...keys.map((key) => ({ key, label: extratoTabLabelFromKey(key), count: map.get(key) ?? 0 })),
     ];
-  }, [statusesWithoutSaldo]);
+  }, [allStatuses]);
   const filteredStatuses = useMemo(() => {
-    const rows = statusesWithoutSaldo;
+    const rows = allStatuses;
     const needle = filterValue.trim().toLowerCase();
     return rows.filter((row) => {
-      const matchesMonth = selectedMonthKey === "todos" || monthKeyFromDate(row.data) === selectedMonthKey;
+      const matchesMonth =
+        selectedMonthKey === "todos" || extratoTabKeyFromRow(row) === selectedMonthKey;
       if (!needle) return matchesMonth;
 
       const matchesByField =
@@ -293,7 +566,7 @@ export default function HomePage() {
 
       return matchesMonth && matchesByField;
     });
-  }, [filterField, filterValue, selectedMonthKey, statusesWithoutSaldo]);
+  }, [filterField, filterValue, selectedMonthKey, allStatuses]);
   const sortedStatuses = useMemo(() => {
     const rows = [...filteredStatuses];
     rows.sort((a, b) => {
@@ -306,7 +579,7 @@ export default function HomePage() {
     return rows;
   }, [filteredStatuses, statusSort]);
   const balanceSummary = useMemo(() => {
-    const rows = statusesWithoutSaldo;
+    const rows = statusesForKpi;
     const totalExtratos = rows.reduce((acc, row) => acc + Number(row.valor_extrato || 0), 0);
     const totalComprovantes = rows.reduce((acc, row) => acc + Number(row.valor_total_conciliado || 0), 0);
     return {
@@ -314,7 +587,54 @@ export default function HomePage() {
       totalComprovantes,
       saldo: totalExtratos - totalComprovantes,
     };
-  }, [statusesWithoutSaldo]);
+  }, [statusesForKpi]);
+
+  const allMatches = useMemo(() => dataset?.matches ?? [], [dataset?.matches]);
+  const filteredMatches = useMemo(() => {
+    const needle = filterValue.trim().toLowerCase();
+    if (!needle) return allMatches;
+    return allMatches.filter((row) => {
+      if (filterField === "geral") {
+        const blob = `${row.extrato_id} ${row.data_extrato} ${row.comprovante_id} ${row.data_comprovante} ${row.ref_sigra} ${row.categoria} ${row.cliente} ${row.origem}`;
+        return blob.toLowerCase().includes(needle);
+      }
+      if (filterField === "data") {
+        return `${row.data_extrato} ${row.data_comprovante}`.toLowerCase().includes(needle);
+      }
+      if (filterField === "id_extrato") {
+        return String(row.extrato_id || "").toLowerCase().includes(needle);
+      }
+      if (filterField === "ref_sigra") {
+        return String(row.ref_sigra || "").toLowerCase().includes(needle);
+      }
+      if (filterField === "descricao") {
+        return `${row.categoria} ${row.cliente}`.toLowerCase().includes(needle);
+      }
+      return true;
+    });
+  }, [allMatches, filterField, filterValue]);
+  const sortedMatches = useMemo(() => {
+    const rows = [...filteredMatches];
+    rows.sort((a, b) => {
+      const left =
+        matchSort.field === "data"
+          ? parseBrDateToTs(a.data_extrato || a.data_comprovante)
+          : Number(a.valor_extrato || 0);
+      const right =
+        matchSort.field === "data"
+          ? parseBrDateToTs(b.data_extrato || b.data_comprovante)
+          : Number(b.valor_extrato || 0);
+      const diff = left - right;
+      if (diff === 0) return 0;
+      return matchSort.direction === "asc" ? diff : -diff;
+    });
+    return rows;
+  }, [filteredMatches, matchSort]);
+
+  const visibleSectors = useMemo(() => {
+    if (!currentUser || currentUser.role === "admin") return SECTOR_MENU;
+    return SECTOR_MENU.filter((sector) => sector.key === currentUser.sector);
+  }, [currentUser]);
 
   async function apiFetch(path: string, init?: RequestInit) {
     const headers = new Headers(init?.headers || {});
@@ -347,6 +667,18 @@ export default function HomePage() {
     setCurrentUser(data);
   }
 
+  function applyAuthSuccess(accessToken: string, user: AuthUser | null) {
+    setAuthToken(accessToken);
+    setCurrentUser(user);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("fin_access_token", accessToken);
+    }
+    setLoginPassword("");
+    setRegisterPasswordConfirm("");
+    setAuthError("");
+    setGuestView("landing");
+  }
+
   async function handleLogin() {
     if (!loginUsername.trim() || !loginPassword.trim()) {
       setAuthError("Informe usuário e senha.");
@@ -362,14 +694,9 @@ export default function HomePage() {
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok || !payload?.access_token) {
-        throw new Error(payload?.detail || "Falha ao autenticar.");
+        throw new Error(parseApiErrorDetail(payload?.detail, "Falha ao autenticar."));
       }
-      setAuthToken(payload.access_token);
-      setCurrentUser(payload.user || null);
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("fin_access_token", payload.access_token);
-      }
-      setLoginPassword("");
+      applyAuthSuccess(payload.access_token, payload.user || null);
     } catch (e) {
       setAuthError(e instanceof Error ? e.message : "Erro ao autenticar.");
     } finally {
@@ -377,14 +704,324 @@ export default function HomePage() {
     }
   }
 
-  function handleLogout() {
+  async function handleRegister() {
+    if (!loginUsername.trim() || !loginPassword.trim()) {
+      setAuthError("Informe usuário e senha.");
+      return;
+    }
+    if (loginUsername.trim().length < 3) {
+      setAuthError("O usuário deve ter pelo menos 3 caracteres.");
+      return;
+    }
+    if (loginPassword !== registerPasswordConfirm) {
+      setAuthError("As senhas não coincidem.");
+      return;
+    }
+    if (loginPassword.length < 6) {
+      setAuthError("A senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError("");
+    setAuthSuccess("");
+    try {
+      const res = await fetch(`${API_BASE}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: loginUsername.trim(),
+          password: loginPassword,
+          sector: registerSector,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error(
+            "Serviço de cadastro indisponível. Reinicie o backend (porta 8000) e tente novamente.",
+          );
+        }
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível criar a conta."));
+      }
+      setLoginPassword("");
+      setRegisterPasswordConfirm("");
+      setAuthMode("login");
+      setAuthSuccess(
+        payload?.message ||
+          "Cadastro enviado! Aguarde a aprovação de um administrador para entrar.",
+      );
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : "Erro ao cadastrar.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function loadPendingUsers() {
+    setPendingUsersLoading(true);
+    try {
+      const res = await apiFetch("/auth/admin/pending-users");
+      if (!res.ok) throw new Error("Não foi possível carregar solicitações pendentes.");
+      const data = (await res.json()) as PendingUser[];
+      setPendingUsers(data);
+      setApprovalSectorByUser((prev) => {
+        const next = { ...prev };
+        for (const user of data) {
+          if (!next[user.id]) {
+            next[user.id] = (user.requested_sector as SectorKey) || "financeiro";
+          }
+        }
+        return next;
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao carregar aprovações.");
+    } finally {
+      setPendingUsersLoading(false);
+    }
+  }
+
+  async function approvePendingUser(userId: number) {
+    const sector = approvalSectorByUser[userId] || "financeiro";
+    setPendingActionId(userId);
+    try {
+      const res = await apiFetch(`/auth/admin/users/${userId}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sector }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível aprovar o cadastro."));
+      }
+      setPendingUsers((prev) => prev.filter((u) => u.id !== userId));
+      await loadPendingCount();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao aprovar cadastro.");
+    } finally {
+      setPendingActionId(null);
+    }
+  }
+
+  async function rejectPendingUser(userId: number) {
+    setPendingActionId(userId);
+    try {
+      const res = await apiFetch(`/auth/admin/users/${userId}/reject`, { method: "POST" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível recusar o cadastro."));
+      }
+      setPendingUsers((prev) => prev.filter((u) => u.id !== userId));
+      await loadPendingCount();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao recusar cadastro.");
+    } finally {
+      setPendingActionId(null);
+    }
+  }
+
+  function openAuthScreen(mode: "login" | "register") {
+    setAuthMode(mode);
+    setAuthError("");
+    setAuthSuccess("");
+    setGuestView("auth");
+  }
+
+  function clearLocalAuth() {
     setAuthToken(null);
     setCurrentUser(null);
     setAuthError("");
     setRuns([]);
     setDataset(null);
+    setActiveSessionCount(0);
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("fin_access_token");
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      if (authToken) {
+        await apiFetch("/auth/logout", { method: "POST" });
+      }
+    } catch {
+      /* encerra localmente mesmo se a API falhar */
+    } finally {
+      clearLocalAuth();
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (!loginUsername.trim()) {
+      setAuthError("Informe seu usuário para solicitar a redefinição.");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError("");
+    setAuthSuccess("");
+    try {
+      const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUsername.trim() }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível processar a solicitação."));
+      }
+      let message =
+        payload?.message ||
+        "Se o usuário existir, um administrador pode fornecer o link de redefinição.";
+      if (payload?.reset_url) {
+        message = `${message} Link (ambiente de teste): ${payload.reset_url}`;
+      }
+      setAuthSuccess(message);
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : "Erro ao solicitar redefinição.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleResetPassword() {
+    if (!resetToken.trim() || !newPassword.trim()) {
+      setAuthError("Informe o link de redefinição e a nova senha.");
+      return;
+    }
+    if (newPassword !== newPasswordConfirm) {
+      setAuthError("As senhas não coincidem.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setAuthError("A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError("");
+    setAuthSuccess("");
+    try {
+      const res = await fetch(`${API_BASE}/auth/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: resetToken.trim(), new_password: newPassword }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível redefinir a senha."));
+      }
+      setNewPassword("");
+      setNewPasswordConfirm("");
+      setResetToken("");
+      setAuthSuccess(payload?.message || "Senha redefinida. Faça login com a nova senha.");
+      setGuestView("auth");
+      setAuthMode("login");
+    } catch (e) {
+      setAuthError(e instanceof Error ? e.message : "Erro ao redefinir senha.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function loadActiveSessions() {
+    const res = await apiFetch("/auth/sessions");
+    if (!res.ok) return;
+    const data = (await res.json()) as { id: number }[];
+    setActiveSessionCount(data.length);
+  }
+
+  async function handleChangePassword() {
+    if (!changeCurrentPassword.trim() || !changeNewPassword.trim()) {
+      setPasswordError("Preencha a senha atual e a nova senha.");
+      return;
+    }
+    if (changeNewPassword !== changeNewPasswordConfirm) {
+      setPasswordError("A confirmação da nova senha não confere.");
+      return;
+    }
+    if (changeNewPassword.length < 6) {
+      setPasswordError("A nova senha deve ter pelo menos 6 caracteres.");
+      return;
+    }
+    setPasswordBusy(true);
+    setPasswordError("");
+    setPasswordMessage("");
+    try {
+      const res = await apiFetch("/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          current_password: changeCurrentPassword,
+          new_password: changeNewPassword,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível alterar a senha."));
+      }
+      setChangeCurrentPassword("");
+      setChangeNewPassword("");
+      setChangeNewPasswordConfirm("");
+      setPasswordMessage(payload?.message || "Senha alterada com sucesso.");
+      await loadActiveSessions();
+    } catch (e) {
+      setPasswordError(e instanceof Error ? e.message : "Erro ao alterar senha.");
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
+
+  async function handleLogoutOtherSessions() {
+    setPasswordBusy(true);
+    setPasswordError("");
+    setPasswordMessage("");
+    try {
+      const res = await apiFetch("/auth/logout-all", { method: "POST" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível encerrar outras sessões."));
+      }
+      setPasswordMessage(payload?.message || "Outras sessões encerradas.");
+      await loadActiveSessions();
+    } catch (e) {
+      setPasswordError(e instanceof Error ? e.message : "Erro ao encerrar sessões.");
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
+
+  async function adminGenerateResetLink() {
+    const username = adminLookupUsername.trim();
+    if (!username) {
+      setAdminError("Informe o usuário para gerar o link.");
+      return;
+    }
+    setAdminBusy(true);
+    setAdminError("");
+    setAdminMessage("");
+    setAdminResetLink("");
+    setAdminResetLinkFor("");
+    try {
+      const lookupRes = await apiFetch(
+        `/auth/admin/users/lookup?username=${encodeURIComponent(username)}`,
+      );
+      const lookupPayload = await lookupRes.json().catch(() => ({}));
+      if (!lookupRes.ok) {
+        throw new Error(parseApiErrorDetail(lookupPayload?.detail, "Usuário não encontrado."));
+      }
+      const user = lookupPayload as AuthUser;
+      const linkRes = await apiFetch(`/auth/admin/users/${user.id}/password-reset-link`, {
+        method: "POST",
+      });
+      const linkPayload = await linkRes.json().catch(() => ({}));
+      if (!linkRes.ok) {
+        throw new Error(parseApiErrorDetail(linkPayload?.detail, "Não foi possível gerar o link."));
+      }
+      setAdminResetLink(linkPayload.reset_url || "");
+      setAdminResetLinkFor(linkPayload.username || user.username);
+      setAdminMessage(`Link gerado para ${linkPayload.username || user.username} (válido por 1 hora).`);
+    } catch (e) {
+      setAdminError(e instanceof Error ? e.message : "Erro ao gerar link.");
+    } finally {
+      setAdminBusy(false);
     }
   }
 
@@ -394,6 +1031,58 @@ export default function HomePage() {
         ? { field, direction: prev.direction === "desc" ? "asc" : "desc" }
         : { field, direction: "desc" },
     );
+  }
+
+  function toggleMatchSort(field: "data" | "valor") {
+    setMatchSort((prev) =>
+      prev.field === field
+        ? { field, direction: prev.direction === "desc" ? "asc" : "desc" }
+        : { field, direction: "desc" },
+    );
+  }
+
+  async function loadPendingCount() {
+    if (currentUser?.role !== "admin") {
+      setPendingCount(0);
+      return;
+    }
+    const res = await apiFetch("/auth/admin/pending-count");
+    if (!res.ok) return;
+    const data = (await res.json()) as { count?: number };
+    setPendingCount(Number(data.count || 0));
+  }
+
+  async function downloadRunExcel(runId: number) {
+    setDownloadBusy(true);
+    setError("");
+    try {
+      const res = await apiFetch(`/runs/${runId}/download`);
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível baixar o Excel."));
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") || "";
+      const utfMatch = disposition.match(/filename\*=UTF-8''([^;\s]+)/i);
+      const plainMatch = disposition.match(/filename="?([^";\n]+)"?/i);
+      const filename = utfMatch
+        ? decodeURIComponent(utfMatch[1])
+        : plainMatch
+          ? plainMatch[1].trim()
+          : `conciliacao_run_${runId}.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao baixar Excel.");
+    } finally {
+      setDownloadBusy(false);
+    }
   }
 
   async function loadAutomations() {
@@ -552,9 +1241,25 @@ export default function HomePage() {
     if (typeof window !== "undefined") {
       const token = window.localStorage.getItem("fin_access_token");
       if (token) setAuthToken(token);
+      const params = new URLSearchParams(window.location.search);
+      const resetFromUrl = params.get("reset");
+      if (resetFromUrl) {
+        setResetToken(resetFromUrl);
+        setGuestView("reset");
+        window.history.replaceState({}, "", window.location.pathname);
+      }
     }
     setAuthReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!authToken || currentUser?.role !== "admin") return;
+    loadPendingCount().catch(() => null);
+    const timer = window.setInterval(() => {
+      loadPendingCount().catch(() => null);
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, [authToken, currentUser?.role]);
 
   useEffect(() => {
     if (!authToken) return;
@@ -621,6 +1326,10 @@ export default function HomePage() {
   }, [bankView]);
 
   useEffect(() => {
+    setSelectedMonthKey("todos");
+  }, [selectedRunId]);
+
+  useEffect(() => {
     if (!monthTabs.length) return;
     const exists = monthTabs.some((tab) => tab.key === selectedMonthKey);
     if (!exists) setSelectedMonthKey("todos");
@@ -644,7 +1353,32 @@ export default function HomePage() {
   }, [selectedRun?.id, bankView]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (activeView !== "configuracoes") return;
+    setPasswordError("");
+    setPasswordMessage("");
+    setAdminError("");
+    setAdminMessage("");
+    loadActiveSessions().catch(() => null);
+    if (currentUser?.role === "admin") {
+      loadPendingUsers().catch(() => null);
+      loadPendingCount().catch(() => null);
+    }
+  }, [activeView, currentUser?.role]);
+
+  useEffect(() => {
+    const panel = document.querySelector(".platform-dashboard");
+    const timer = window.setTimeout(() => {
+      panel?.scrollTo({ top: 0, behavior: "smooth" });
+    }, 420);
+    return () => window.clearTimeout(timer);
+  }, [activeView]);
+
+  useEffect(() => {
+    const useConfigBg = Boolean(authToken) && activeView === "configuracoes";
+    document.documentElement.setAttribute("data-kivo-bg", useConfigBg ? "config" : "degrade");
+  }, [authToken, activeView]);
+
+  useEffect(() => {
     let lastY = window.scrollY;
     const minY = 80;
     const minDelta = 10;
@@ -680,114 +1414,374 @@ export default function HomePage() {
   }
 
   if (!authToken || !currentUser) {
+    const scrollToLogin = () => openAuthScreen("login");
+
+    if (guestView === "auth" || guestView === "forgot" || guestView === "reset") {
+      const isRegister = authMode === "register" && guestView === "auth";
+      const isForgot = guestView === "forgot";
+      const isReset = guestView === "reset";
+      const authTitle = isReset
+        ? "Defina uma nova senha"
+        : isForgot
+          ? "Recuperar acesso"
+          : isRegister
+            ? "Crie sua conta no KIVO"
+            : "Bem-vindo de volta!";
+      return (
+        <main className="auth-screen">
+          <button
+            type="button"
+            className="auth-screen-back"
+            onClick={() => {
+              setAuthError("");
+              setAuthSuccess("");
+              if (isForgot || isReset) {
+                setGuestView("auth");
+                setAuthMode("login");
+              } else {
+                setGuestView("landing");
+              }
+            }}
+          >
+            <span aria-hidden="true">‹</span> Voltar
+          </button>
+
+          <div className="auth-screen-card">
+            <div className="auth-screen-logo">
+              <Image
+                src="/brand/kivo-logotipo.png"
+                alt="KIVO"
+                width={200}
+                height={56}
+                className="auth-screen-logo-img"
+                priority
+              />
+            </div>
+
+            <h1 className="auth-screen-title">{authTitle}</h1>
+            <p className="auth-screen-subtitle">
+              {isReset ? (
+                <>
+                  Cole o código do link ou use o link enviado pelo administrador.{" "}
+                  <button
+                    type="button"
+                    className="auth-screen-link"
+                    onClick={() => {
+                      setGuestView("auth");
+                      setAuthMode("login");
+                      setAuthError("");
+                    }}
+                  >
+                    Voltar ao login
+                  </button>
+                </>
+              ) : isForgot ? (
+                <>
+                  Informe seu usuário. Um administrador pode gerar o link de redefinição.{" "}
+                  <button
+                    type="button"
+                    className="auth-screen-link"
+                    onClick={() => {
+                      setGuestView("auth");
+                      setAuthMode("login");
+                      setAuthError("");
+                    }}
+                  >
+                    Voltar ao login
+                  </button>
+                </>
+              ) : isRegister ? (
+                <>
+                  Já tem conta?{" "}
+                  <button
+                    type="button"
+                    className="auth-screen-link"
+                    onClick={() => {
+                      setAuthMode("login");
+                      setAuthSuccess("");
+                    }}
+                  >
+                    Entrar
+                  </button>
+                </>
+              ) : (
+                <>
+                  Primeira vez aqui?{" "}
+                  <button
+                    type="button"
+                    className="auth-screen-link"
+                    onClick={() => {
+                      setAuthMode("register");
+                      setAuthSuccess("");
+                    }}
+                  >
+                    Cadastre-se grátis
+                  </button>
+                </>
+              )}
+            </p>
+
+            {isRegister && (
+              <p className="auth-screen-subtitle auth-screen-register-hint">
+                Após o cadastro, um administrador aprova seu acesso e define o setor liberado.
+              </p>
+            )}
+
+            {isForgot && (
+              <p className="auth-screen-subtitle auth-screen-register-hint">
+                Por segurança, a resposta é sempre a mesma, mesmo que o usuário não exista.
+              </p>
+            )}
+
+            <div className="auth-screen-form">
+              {(guestView === "auth" || isForgot) && (
+              <div className="auth-screen-field">
+                <input
+                  id="auth-username"
+                  type="text"
+                  placeholder="Seu usuário"
+                  value={loginUsername}
+                  onChange={(e) => setLoginUsername(e.target.value)}
+                  autoComplete="username"
+                />
+              </div>
+              )}
+
+              {isReset && (
+                <div className="auth-screen-field">
+                  <input
+                    id="auth-reset-token"
+                    type="text"
+                    placeholder="Código do link de redefinição"
+                    value={resetToken}
+                    onChange={(e) => setResetToken(e.target.value)}
+                    autoComplete="off"
+                  />
+                </div>
+              )}
+
+              {isRegister && (
+                <div className="auth-screen-field">
+                  <label className="auth-screen-label" htmlFor="auth-sector">
+                    Setor
+                  </label>
+                  <select
+                    id="auth-sector"
+                    className="auth-screen-select"
+                    value={registerSector}
+                    onChange={(e) => setRegisterSector(e.target.value as SectorKey)}
+                  >
+                    {SECTOR_MENU.map((sector) => (
+                      <option key={sector.key} value={sector.key}>
+                        {sector.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {(guestView === "auth" || isReset) && (
+              <div className="auth-screen-field">
+                <AuthPasswordField
+                  id="auth-password"
+                  placeholder={isReset ? "Nova senha" : "Sua senha"}
+                  value={isReset ? newPassword : loginPassword}
+                  visible={isReset ? showNewPassword : showAuthPassword}
+                  onToggleVisible={() =>
+                    isReset ? setShowNewPassword((prev) => !prev) : setShowAuthPassword((prev) => !prev)
+                  }
+                  autoComplete={isRegister || isReset ? "new-password" : "current-password"}
+                  onChange={isReset ? setNewPassword : setLoginPassword}
+                  onEnter={() => {
+                    if (isReset) handleResetPassword().catch(() => null);
+                    else if (isRegister) handleRegister().catch(() => null);
+                    else handleLogin().catch(() => null);
+                  }}
+                />
+              </div>
+              )}
+
+              {(isRegister || isReset) && (
+                <div className="auth-screen-field">
+                  <AuthPasswordField
+                    id="auth-password-confirm"
+                    placeholder="Confirme sua senha"
+                    value={isReset ? newPasswordConfirm : registerPasswordConfirm}
+                    visible={isReset ? showNewPasswordConfirm : showAuthPasswordConfirm}
+                    onToggleVisible={() =>
+                      isReset
+                        ? setShowNewPasswordConfirm((prev) => !prev)
+                        : setShowAuthPasswordConfirm((prev) => !prev)
+                    }
+                    autoComplete="new-password"
+                    onChange={isReset ? setNewPasswordConfirm : setRegisterPasswordConfirm}
+                    onEnter={() => {
+                      if (isReset) handleResetPassword().catch(() => null);
+                      else handleRegister().catch(() => null);
+                    }}
+                  />
+                </div>
+              )}
+
+              <button
+                type="button"
+                className="auth-screen-submit"
+                disabled={authLoading}
+                onClick={() => {
+                  if (isReset) handleResetPassword().catch(() => null);
+                  else if (isForgot) handleForgotPassword().catch(() => null);
+                  else if (isRegister) handleRegister().catch(() => null);
+                  else handleLogin().catch(() => null);
+                }}
+              >
+                {authLoading
+                  ? isReset
+                    ? "Salvando..."
+                    : isForgot
+                      ? "Enviando..."
+                      : isRegister
+                        ? "Criando conta..."
+                        : "Entrando..."
+                  : isReset
+                    ? "Redefinir senha"
+                    : isForgot
+                      ? "Solicitar redefinição"
+                      : isRegister
+                        ? "Criar conta"
+                        : "Entrar"}
+              </button>
+
+              {guestView === "auth" && authMode === "login" && (
+                <button
+                  type="button"
+                  className="auth-screen-link auth-screen-forgot"
+                  onClick={() => {
+                    setAuthError("");
+                    setAuthSuccess("");
+                    setGuestView("forgot");
+                  }}
+                >
+                  Esqueci minha senha
+                </button>
+              )}
+
+              {authError && <p className="auth-screen-error">{authError}</p>}
+              {authSuccess && <p className="auth-screen-success">{authSuccess}</p>}
+            </div>
+
+            <p className="auth-screen-legal">
+              Ao continuar, você concorda com os{" "}
+              <a href="#termos">Termos de Uso</a> e a <a href="#privacidade">Política de Privacidade</a>.
+            </p>
+          </div>
+        </main>
+      );
+    }
+
     return (
       <main className="lp-shell">
         <header className={`lp-topbar ${hideLandingTopbar ? "lp-topbar--hidden" : ""}`}>
           <div className="lp-brand">
-            <Image src="/brand/logo-completa-rbg.png" alt="MasterPort" width={460} height={110} className="lp-brand-logo" />
+            <Image
+              src="/brand/kivo-logotipo.png"
+              alt="KIVO"
+              width={360}
+              height={90}
+              className="lp-brand-logo"
+              priority
+            />
           </div>
           <nav className="lp-nav">
-            <span>Módulos</span>
-            <span>Plataforma</span>
-            <span>Governança</span>
+            <a href="#lp-modules">Soluções</a>
+            <a href="#lp-modules">Módulos</a>
+            <a href="#lp-journey">API</a>
+            <a href="#lp-journey">Planos</a>
           </nav>
-          <span className="lp-login-tag">Entrar -&gt;</span>
         </header>
 
         <section className="lp-hero-grid">
           <article className="lp-hero-copy">
-            <span className="lp-kicker">
-              <span className="lp-kicker-dot" />
-              Comércio Exterior + Financeiro
-            </span>
-            <h1>O ERP que move sua operação global.</h1>
+            <h1>O ERP QUE MOVE SUA OPERAÇÃO GLOBAL.</h1>
             <p>
-              MasterPort centraliza processos de Comex, automatiza conciliações bancárias (Banco do Brasil e Itaú/
-              SIGRA) e dá visibilidade ponta a ponta em uma plataforma única, segura e pronta para escalar por todos
-              os setores.
+              Automação inteligente e infraestrutura cloud-native para times que não podem parar a operação global.
+              Conciliações, Comex e governança em uma única plataforma.
             </p>
             <div className="lp-cta-row">
-              <button type="button" className="lp-btn-primary">
-                Acessar o sistema
+              <button type="button" className="lp-btn-primary" onClick={scrollToLogin}>
+                Acessar Plataforma
               </button>
-              <button type="button" className="lp-btn-ghost">
-                Conhecer os módulos
+              <button
+                type="button"
+                className="lp-btn-ghost"
+                onClick={() => document.getElementById("lp-modules")?.scrollIntoView({ behavior: "smooth" })}
+              >
+                Conhecer os Módulos
+                <span className="lp-chevron" aria-hidden="true">
+                  ↓
+                </span>
               </button>
             </div>
           </article>
 
-          <article className="lp-login-card">
+          <article className="lp-login-card" id="lp-login">
             <div className="login-hero">
-              <span className="lp-access-tag">Acesso restrito</span>
-              <h2>Entrar no MasterPort</h2>
-              <p>Use suas credenciais corporativas.</p>
+              <Image
+                src="/brand/kivo-logotipo.png"
+                alt="KIVO"
+                width={160}
+                height={44}
+                className="lp-login-card-logo"
+                priority
+              />
+              <h2>Acesse o KIVO</h2>
+              <p>Entre na sua conta ou crie um acesso novo em segundos.</p>
             </div>
-            <div className="login-form">
-              <label className="login-label" htmlFor="login-username">
-                Usuário
-              </label>
-              <input
-                id="login-username"
-                type="text"
-                placeholder="nome.sobrenome"
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
-                autoComplete="username"
-              />
-              <div className="lp-password-row">
-                <label className="login-label" htmlFor="login-password">
-                  Senha
-                </label>
-                <button type="button" className="lp-forgot-btn">
-                  Esqueceu?
-                </button>
-              </div>
-              <input
-                id="login-password"
-                type="password"
-                placeholder="Digite sua senha"
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                autoComplete="current-password"
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleLogin().catch(() => null);
-                }}
-              />
-              <button
-                type="button"
-                className="lp-login-submit"
-                onClick={() => handleLogin().catch(() => null)}
-                disabled={authLoading}
-              >
-                {authLoading ? "Entrando..." : "Entrar"}
+            <div className="login-form lp-login-cta-stack">
+              <button type="button" className="lp-login-submit" onClick={() => openAuthScreen("login")}>
+                Entrar na conta
               </button>
-              {authError && <p className="error">{authError}</p>}
+              <button type="button" className="lp-btn-ghost lp-login-secondary" onClick={() => openAuthScreen("register")}>
+                Criar conta grátis
+              </button>
             </div>
-            <p className="login-help">Ambiente monitorado. Todas as ações de login são registradas para auditoria.</p>
           </article>
         </section>
 
-        <section className="lp-module-grid">
+        <section className="lp-module-grid" id="lp-modules">
           <article className="lp-module-card">
-            <span className="lp-metric-icon">+</span>
+            <span className="lp-feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+                <path d="M9 9h6M9 12h6M9 15h4" />
+              </svg>
+            </span>
             <h3>Menos trabalho manual</h3>
             <p>Conciliações que levavam horas em planilhas, executadas em minutos.</p>
           </article>
           <article className="lp-module-card">
-            <span className="lp-metric-icon">o</span>
+            <span className="lp-feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z" />
+                <circle cx="12" cy="12" r="3" />
+              </svg>
+            </span>
             <h3>Visibilidade total</h3>
             <p>Logs de execução, histórico de cargas e status em tempo real.</p>
           </article>
           <article className="lp-module-card">
-            <span className="lp-metric-icon">#</span>
-            <h3>Governanca auditada</h3>
+            <span className="lp-feature-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M12 3l7 4v5c0 4.5-3.2 7.8-7 9-3.8-1.2-7-4.5-7-9V7l7-4z" />
+              </svg>
+            </span>
+            <h3>Governança auditada</h3>
             <p>Rastreabilidade ponta a ponta com controle de acesso por papel.</p>
           </article>
         </section>
 
-        <section className="lp-flow-section">
+        <section className="lp-flow-section" id="lp-journey">
           <div className="lp-flow-header">
-            <span className="lp-flow-kicker">Como funciona na prática</span>
+            <span className="lp-flow-kicker">COMO OPERAR NA MÉTRICA</span>
             <h2>Uma jornada simples para operar e escalar.</h2>
             <p>
               Da entrada dos documentos ao acompanhamento dos resultados, o fluxo foi pensado para reduzir atrito no dia
@@ -800,27 +1794,49 @@ export default function HomePage() {
               <span className="lp-flow-index">01</span>
               <h3>Monte a rodada</h3>
               <p>Selecione banco, anexe extratos e comprovantes, e valide os arquivos obrigatórios.</p>
+              <div className="lp-dash-preview" aria-hidden="true">
+                <div className="lp-dash-toolbar" />
+                <div className="lp-dash-chart" />
+                <div className="lp-dash-rows">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </div>
             </article>
             <article className="lp-flow-step">
               <span className="lp-flow-index">02</span>
               <h3>Execute em um clique</h3>
               <p>Dispare a automação e acompanhe o status da execução sem trocar de tela.</p>
+              <div className="lp-dash-preview lp-dash-preview--wide" aria-hidden="true">
+                <div className="lp-dash-toolbar" />
+                <div className="lp-dash-kpis">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className="lp-dash-rows">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+              </div>
             </article>
             <article className="lp-flow-step">
               <span className="lp-flow-index">03</span>
               <h3>Analise e audite</h3>
               <p>Consulte logs, pendências e histórico consolidado com rastreabilidade ponta a ponta.</p>
-            </article>
-          </div>
-
-          <div className="lp-flow-showcase">
-            <article className="lp-flow-panel">
-              <h4>Visão Operacional</h4>
-              <p>KPIs e filas em tempo real para saber exatamente onde agir.</p>
-            </article>
-            <article className="lp-flow-panel">
-              <h4>Governança</h4>
-              <p>Controle por perfil, trilha de ações e contexto completo para auditoria.</p>
+              <div className="lp-dash-preview" aria-hidden="true">
+                <div className="lp-dash-toolbar" />
+                <div className="lp-dash-split">
+                  <div className="lp-dash-chart lp-dash-chart--sm" />
+                  <div className="lp-dash-rows">
+                    <span />
+                    <span />
+                  </div>
+                </div>
+              </div>
             </article>
           </div>
         </section>
@@ -830,73 +1846,385 @@ export default function HomePage() {
 
   return (
     <div className="platform-shell">
-      <aside className="platform-sidebar">
-        <div className="brand-block">
-          <Image src="/brand/logo-simples.png" alt="Símbolo MasterPort" width={64} height={64} className="brand-logo-icon" />
-          <div className="brand-subtitle">Aplicativos por setor</div>
-        </div>
-        <nav className="sector-nav">
-          {SECTOR_MENU.map((sector) => (
-            <button
-              key={sector.key}
-              type="button"
-              className={`sector-btn ${activeSector === sector.key ? "active" : ""}`}
-              onClick={() => setActiveSector(sector.key)}
-            >
-              <span>{sector.label}</span>
-              <small>{sector.subtitle}</small>
-            </button>
-          ))}
-        </nav>
-      </aside>
-
-      <div className="platform-main">
-        <header className="platform-topbar">
-          <div>
-            <h1 className="platform-title">
-              {activeSector === "financeiro"
-                ? "Setor Financeiro"
-                : activeSector === "pedro"
-                  ? "Setor Pedro"
-                  : activeSector === "rh"
-                    ? "Setor RH"
-                    : "Setor de Operações"}
-            </h1>
-            <p className="platform-subtitle">Navegação preparada para múltiplos módulos dentro do mesmo aplicativo.</p>
-          </div>
-          <span className="platform-tag">Módulo ativo</span>
-          <div className="control-row">
-            <span className="muted">
-              {currentUser.username} ({currentUser.role})
-            </span>
-            <button type="button" className="btn-secondary" onClick={handleLogout}>
-              Sair
-            </button>
-          </div>
-        </header>
-
-        {activeSector === "operacoes" && (
-          <nav className="module-subnav">
+      <div className="platform-frame">
+        <aside className="platform-rail" aria-label="Navegação rápida">
+          <button
+            type="button"
+            className="platform-rail-logo-btn"
+            onClick={() => setActiveView("inicio")}
+            title="KIVO — Início"
+          >
+            <Image src="/brand/kivo-logotipo.png" alt="KIVO" width={64} height={64} className="platform-rail-logo" />
+          </button>
+          <nav className="platform-rail-nav">
             <button
               type="button"
-              className={`module-subnav-btn ${operationsView === "importacao" ? "active" : ""}`}
-              onClick={() => setOperationsView("importacao")}
+              className={`platform-rail-btn ${activeView === "inicio" ? "active" : ""}`}
+              onClick={() => setActiveView("inicio")}
+              title="Início"
+              aria-label="Início"
             >
-              Importação
+              <HomeRailIcon />
             </button>
-            <button
-              type="button"
-              className={`module-subnav-btn ${operationsView === "exportacao" ? "active" : ""}`}
-              onClick={() => setOperationsView("exportacao")}
-            >
-              Exportação
-            </button>
+            {visibleSectors.map((sector) => (
+              <button
+                key={sector.key}
+                type="button"
+                className={`platform-rail-btn ${activeView === sector.key ? "active" : ""}`}
+                onClick={() => setActiveView(sector.key)}
+                title={`${sector.label} — ${sector.subtitle}`}
+                aria-label={sector.label}
+              >
+                <SectorRailIcon sector={sector.key} />
+              </button>
+            ))}
           </nav>
-        )}
+          <button
+            type="button"
+            className={`platform-rail-btn platform-rail-btn--settings ${activeView === "configuracoes" ? "active" : ""}`}
+            onClick={() => setActiveView("configuracoes")}
+            title={
+              pendingCount > 0
+                ? `Configurações (${pendingCount} cadastro${pendingCount === 1 ? "" : "s"} pendente${pendingCount === 1 ? "" : "s"})`
+                : "Configurações"
+            }
+            aria-label="Configurações"
+          >
+            <SettingsRailIcon />
+            {currentUser.role === "admin" && pendingCount > 0 && (
+              <span className="platform-nav-badge" aria-hidden="true">
+                {pendingCount > 9 ? "9+" : pendingCount}
+              </span>
+            )}
+          </button>
+          <div className="platform-rail-avatar" title={`${currentUser.username} (${currentUser.role})`}>
+            {currentUser.username.charAt(0).toUpperCase()}
+          </div>
+        </aside>
 
-        {activeSector !== "financeiro" ? (
-          <section className="panel app-shell">
-            {activeSector === "operacoes" ? (
+        <div className="platform-dashboard-wrap">
+          <div
+            className={`platform-dashboard${
+              activeView === "financeiro"
+                ? " platform-dashboard--financeiro"
+                : " platform-dashboard--centered"
+            }`}
+          >
+            {activeView !== "inicio" && (
+              <header className="platform-page-header platform-page-header--animate">
+                <div>
+                  <h1 className="platform-title">{platformPageTitle(activeView)}</h1>
+                  <p className="platform-subtitle">{platformPageSubtitle(activeView)}</p>
+                </div>
+                <span className="platform-tag">
+                  {activeView === "configuracoes" ? "Sistema" : "Módulo ativo"}
+                </span>
+              </header>
+            )}
+
+            <div key={activeView} className={`platform-view-pane platform-view-pane--${activeView}`}>
+        {activeView === "inicio" ? (
+          <section className="platform-home" aria-label="Página inicial">
+            <div className="platform-home-hero">
+              <div className="platform-home-hero-copy">
+                <p className="platform-home-eyebrow">Olá, {currentUser.username}</p>
+                <h2 className="platform-home-title">
+                  Bem-vindo ao{" "}
+                  <span className="platform-home-brand">
+                    KIV<span className="platform-home-brand-o">O</span>
+                  </span>
+                </h2>
+                <p className="platform-home-lead">
+                  Escolha um setor para começar. Você também pode usar a barra lateral ou a navegação
+                  inferior.
+                </p>
+              </div>
+              <div className="platform-home-hero-mascot" aria-hidden="true">
+                <div className="platform-home-hero-mascot-glow" />
+                <KivoRobot mood="idle" className="platform-home-hero-robot" title="Assistente KIVO" />
+              </div>
+            </div>
+
+            <div className="platform-home-modules-head">
+              <h3 className="platform-home-modules-title">Seus módulos</h3>
+              <span className="platform-home-modules-count">
+                {visibleSectors.length} {visibleSectors.length === 1 ? "setor" : "setores"}
+              </span>
+            </div>
+
+            <div className="platform-home-modules">
+              {visibleSectors.map((sector) => (
+                <button
+                  key={sector.key}
+                  type="button"
+                  className={`platform-home-module platform-home-module--${sector.key}`}
+                  onClick={() => setActiveView(sector.key)}
+                >
+                  <span className="platform-home-module-icon" aria-hidden="true">
+                    <SectorRailIcon sector={sector.key} />
+                  </span>
+                  <span className="platform-home-module-body">
+                    <strong>{sector.label}</strong>
+                    <span className="platform-home-module-desc">{sector.subtitle}</span>
+                  </span>
+                  <span className="platform-home-module-arrow" aria-hidden="true">
+                    →
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            <p className="platform-home-assistant-hint">
+              <KivoRobot mood="peek" className="platform-home-hint-robot" />
+              Dúvidas? Clique no robô escondido atrás do painel — ele sai, abre o chat e, ao enviar mensagem, fica
+              andando pensando.
+            </p>
+          </section>
+        ) : activeView === "configuracoes" ? (
+          <section className="panel platform-settings">
+            {currentUser.role === "admin" && pendingCount > 0 && (
+              <div className="platform-settings-alert" role="status">
+                <strong>
+                  {pendingCount} cadastro{pendingCount === 1 ? "" : "s"} aguardando aprovação
+                </strong>
+                <span>Revise na seção Administração abaixo.</span>
+              </div>
+            )}
+            <div className="platform-settings-grid">
+              <article className="platform-settings-card">
+                <span className="platform-settings-label">Usuário</span>
+                <strong>{currentUser.username}</strong>
+              </article>
+              <article className="platform-settings-card">
+                <span className="platform-settings-label">Perfil</span>
+                <strong>{roleLabel(currentUser.role)}</strong>
+              </article>
+              <article className="platform-settings-card">
+                <span className="platform-settings-label">Setor</span>
+                <strong>{sectorLabel(currentUser.sector)}</strong>
+              </article>
+              <article className="platform-settings-card">
+                <span className="platform-settings-label">Sessões</span>
+                <strong>
+                  {activeSessionCount > 0
+                    ? `${activeSessionCount} ativa${activeSessionCount === 1 ? "" : "s"}`
+                    : "—"}
+                </strong>
+              </article>
+              <article className="platform-settings-card platform-settings-card--wide">
+                <span className="platform-settings-label">API conectada</span>
+                <strong className="platform-settings-mono">{API_BASE}</strong>
+              </article>
+            </div>
+
+            <div className="platform-settings-stack">
+              <section className="platform-settings-block">
+                <header className="platform-settings-block-head">
+                  <h3>Segurança da conta</h3>
+                  <p className="platform-settings-block-desc">
+                    {activeSessionCount > 1
+                      ? `${activeSessionCount} sessões abertas — alterar a senha mantém apenas esta.`
+                      : "Atualize sua senha quando necessário."}
+                  </p>
+                </header>
+                <div className="platform-settings-security-form">
+                  <label className="platform-settings-field">
+                    <span className="platform-settings-field-label">Senha atual</span>
+                    <AuthPasswordField
+                      id="settings-current-password"
+                      placeholder="Digite a senha atual"
+                      value={changeCurrentPassword}
+                      visible={showAuthPassword}
+                      onToggleVisible={() => setShowAuthPassword((prev) => !prev)}
+                      autoComplete="current-password"
+                      onChange={setChangeCurrentPassword}
+                    />
+                  </label>
+                  <label className="platform-settings-field">
+                    <span className="platform-settings-field-label">Nova senha</span>
+                    <AuthPasswordField
+                      id="settings-new-password"
+                      placeholder="Mínimo 6 caracteres"
+                      value={changeNewPassword}
+                      visible={showNewPassword}
+                      onToggleVisible={() => setShowNewPassword((prev) => !prev)}
+                      autoComplete="new-password"
+                      onChange={setChangeNewPassword}
+                    />
+                  </label>
+                  <label className="platform-settings-field">
+                    <span className="platform-settings-field-label">Confirmar nova senha</span>
+                    <AuthPasswordField
+                      id="settings-new-password-confirm"
+                      placeholder="Repita a nova senha"
+                      value={changeNewPasswordConfirm}
+                      visible={showNewPasswordConfirm}
+                      onToggleVisible={() => setShowNewPasswordConfirm((prev) => !prev)}
+                      autoComplete="new-password"
+                      onChange={setChangeNewPasswordConfirm}
+                    />
+                  </label>
+                </div>
+                <div className="platform-settings-block-actions">
+                  <button
+                    type="button"
+                    className="platform-settings-approve-btn"
+                    disabled={passwordBusy}
+                    onClick={() => handleChangePassword().catch(() => null)}
+                  >
+                    {passwordBusy ? "Salvando…" : "Alterar senha"}
+                  </button>
+                  {activeSessionCount > 1 && (
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={passwordBusy}
+                      onClick={() => handleLogoutOtherSessions().catch(() => null)}
+                    >
+                      Encerrar outras sessões
+                    </button>
+                  )}
+                </div>
+                {passwordError && (
+                  <p className="platform-settings-feedback platform-settings-feedback--error">{passwordError}</p>
+                )}
+                {passwordMessage && (
+                  <p className="platform-settings-feedback platform-settings-feedback--ok">{passwordMessage}</p>
+                )}
+              </section>
+
+              {currentUser.role === "admin" && (
+                <section className="platform-settings-block platform-settings-block--admin">
+                  <header className="platform-settings-block-head">
+                    <h3>Administração</h3>
+                    <p className="platform-settings-block-desc">
+                      Aprovação de cadastros e links de redefinição de senha.
+                    </p>
+                  </header>
+
+                  <div className="platform-settings-admin-panel">
+                    <div className="platform-settings-admin-section">
+                      <div className="platform-settings-approvals-head">
+                        <h4>Cadastros pendentes</h4>
+                        <button
+                          type="button"
+                          className="btn-secondary platform-settings-refresh"
+                          disabled={pendingUsersLoading}
+                          onClick={() => loadPendingUsers().catch(() => null)}
+                        >
+                          {pendingUsersLoading ? "Atualizando…" : "Atualizar"}
+                        </button>
+                      </div>
+                      {pendingUsers.length === 0 ? (
+                        <p className="platform-settings-empty muted">Nenhuma solicitação pendente.</p>
+                      ) : (
+                        <ul className="platform-settings-pending-list">
+                          {pendingUsers.map((user) => (
+                            <li key={user.id} className="platform-settings-pending-item">
+                              <div className="platform-settings-pending-meta">
+                                <strong>{user.username}</strong>
+                                <span>
+                                  {sectorLabel(user.requested_sector)} ·{" "}
+                                  {new Date(user.created_at).toLocaleString("pt-BR")}
+                                </span>
+                              </div>
+                              <div className="platform-settings-pending-actions">
+                                <label className="platform-settings-pending-sector">
+                                  <span>Setor liberado</span>
+                                  <select
+                                    className="platform-settings-select platform-settings-sector-select"
+                                    value={approvalSectorByUser[user.id] || user.requested_sector}
+                                    onChange={(e) =>
+                                      setApprovalSectorByUser((prev) => ({
+                                        ...prev,
+                                        [user.id]: e.target.value as SectorKey,
+                                      }))
+                                    }
+                                    disabled={pendingActionId === user.id}
+                                  >
+                                    {SECTOR_MENU.map((sector) => (
+                                      <option key={sector.key} value={sector.key}>
+                                        {sector.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <button
+                                  type="button"
+                                  className="platform-settings-approve-btn"
+                                  disabled={pendingActionId === user.id}
+                                  onClick={() => approvePendingUser(user.id).catch(() => null)}
+                                >
+                                  Aprovar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-secondary platform-settings-reject-btn"
+                                  disabled={pendingActionId === user.id}
+                                  onClick={() => rejectPendingUser(user.id).catch(() => null)}
+                                >
+                                  Recusar
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+
+                    <div className="platform-settings-admin-section">
+                      <h4>Link de redefinição</h4>
+                      <p className="platform-settings-block-desc">
+                        Válido por 1 hora — envie ao usuário por canal interno.
+                      </p>
+                      <div className="platform-settings-admin-reset-row">
+                        <label className="platform-settings-field platform-settings-admin-reset-input">
+                          <span className="platform-settings-field-label">Usuário</span>
+                          <input
+                            type="text"
+                            placeholder="Nome de login"
+                            value={adminLookupUsername}
+                            onChange={(e) => setAdminLookupUsername(e.target.value)}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="btn-secondary platform-settings-generate-link"
+                          disabled={adminBusy}
+                          onClick={() => adminGenerateResetLink().catch(() => null)}
+                        >
+                          {adminBusy ? "Gerando…" : "Gerar link"}
+                        </button>
+                      </div>
+                      {adminResetLink && (
+                        <div className="platform-settings-reset-link-box">
+                          <span className="platform-settings-label">{adminResetLinkFor}</span>
+                          <a href={adminResetLink} className="platform-settings-reset-link-url">
+                            {adminResetLink}
+                          </a>
+                        </div>
+                      )}
+                      {adminError && (
+                        <p className="platform-settings-feedback platform-settings-feedback--error">{adminError}</p>
+                      )}
+                      {adminMessage && (
+                        <p className="platform-settings-feedback platform-settings-feedback--ok">{adminMessage}</p>
+                      )}
+                    </div>
+                  </div>
+                </section>
+              )}
+            </div>
+
+            <footer className="platform-settings-footer">
+              <button type="button" className="btn-secondary" onClick={() => handleLogout().catch(() => null)}>
+                Sair da conta
+              </button>
+            </footer>
+          </section>
+        ) : activeView !== "financeiro" ? (
+          <section className="panel platform-sector-empty">
+            {activeView === "operacoes" ? (
               <>
                 <h2>Painel de Operações</h2>
                 <p className="subtitle">Escolha o fluxo de Comércio Exterior que deseja operar neste módulo.</p>
@@ -914,7 +2242,7 @@ export default function HomePage() {
               </>
             ) : (
               <>
-                <h2>{SECTOR_MENU.find((item) => item.key === activeSector)?.label} em breve</h2>
+                <h2>{SECTOR_MENU.find((item) => item.key === activeView)?.label} em breve</h2>
                 <p className="subtitle">
                   Este setor já está previsto na navegação. Quando quiser, eu estruturo as telas e fluxos deste módulo também.
                 </p>
@@ -922,7 +2250,7 @@ export default function HomePage() {
             )}
           </section>
         ) : (
-          <main className="app-shell">
+          <main className="app-shell app-shell--financeiro">
       <section className="hero">
         <div>
           <h1>Painel Financeiro / Conciliação</h1>
@@ -1035,6 +2363,8 @@ export default function HomePage() {
           <div className="muted">{flattenedFiles.length} arquivo(s) pronto(s) para envio.</div>
           <div className="control-row">
             <button
+              type="button"
+              className="btn-primary"
               onClick={triggerRun}
               disabled={loading || flattenedFiles.length === 0 || hasMissingRequiredDocs}
             >
@@ -1140,9 +2470,23 @@ export default function HomePage() {
                   <div className="value-sm">{selectedRun.triggered_by}</div>
                 </article>
               </div>
-              {selectedRun.output_path ? (
-                <p className="output-path">
-                  <b>Arquivo de saída:</b> {selectedRun.output_path}
+              {selectedRun.status === "completed" && selectedRun.output_path ? (
+                <div className="run-output-actions">
+                  <button
+                    type="button"
+                    className="platform-settings-approve-btn run-download-btn"
+                    disabled={downloadBusy}
+                    onClick={() => downloadRunExcel(selectedRun.id).catch(() => null)}
+                  >
+                    {downloadBusy ? "Baixando…" : "Baixar Excel da conciliação"}
+                  </button>
+                  <p className="output-path muted">
+                    <b>Arquivo:</b> {selectedRun.output_path.split(/[/\\]/).pop()}
+                  </p>
+                </div>
+              ) : selectedRun.output_path ? (
+                <p className="output-path muted">
+                  <b>Arquivo de saída:</b> será liberado ao concluir a execução.
                 </p>
               ) : (
                 <p className="muted">Arquivo de saída ainda não disponível.</p>
@@ -1161,7 +2505,14 @@ export default function HomePage() {
             className={`tab-btn ${analysisView === "planilha" ? "active" : ""}`}
             onClick={() => setAnalysisView("planilha")}
           >
-            Planilha
+            Status
+          </button>
+          <button
+            type="button"
+            className={`tab-btn ${analysisView === "matches" ? "active" : ""}`}
+            onClick={() => setAnalysisView("matches")}
+          >
+            Conciliações ({allMatches.length})
           </button>
           <button
             type="button"
@@ -1170,6 +2521,16 @@ export default function HomePage() {
           >
             Log Técnico
           </button>
+          {selectedRun?.status === "completed" && selectedRun.output_path && (
+            <button
+              type="button"
+              className="tab-btn tab-btn--download"
+              disabled={downloadBusy}
+              onClick={() => downloadRunExcel(selectedRun.id).catch(() => null)}
+            >
+              {downloadBusy ? "Baixando…" : "↓ Excel"}
+            </button>
+          )}
         </div>
 
         {analysisView === "planilha" && (
@@ -1218,7 +2579,9 @@ export default function HomePage() {
 
                 <h3 style={{ marginTop: 0 }}>Tabela única - Status consolidado</h3>
                 <p className="subtitle" style={{ marginBottom: 8 }}>
-                  Exibição consolidada do extrato com status de conciliação, Ref. Sigra e descrição/histórico.
+                  {bankView === "bb"
+                    ? "Abas por mês do extrato BB (Janeiro, Maio…): cada aba lista todos os lançamentos daquela planilha, independente da data do pagamento."
+                    : "Exibição consolidada do extrato com status de conciliação, Ref. Sigra e descrição/histórico."}
                 </p>
                 <div className="tab-row month-tabs" style={{ marginBottom: 10 }}>
                   {monthTabs.map((tab) => (
@@ -1263,11 +2626,11 @@ export default function HomePage() {
                 <p className="subtitle" style={{ marginBottom: 8 }}>
                   Mostrando {sortedStatuses.length} linha(s) na visão atual.
                 </p>
-                <div className="table-wrapper" style={{ maxHeight: 420 }}>
+                <div className="table-wrapper table-wrapper--scroll planilha-table-scroll">
                   <table>
                     <thead>
                       <tr>
-                        <th>Aba</th>
+                        {bankView === "bb" && <th>Aba extrato</th>}
                         <th>ID Extrato</th>
                         <th
                           onClick={() => toggleStatusSort("data")}
@@ -1291,8 +2654,10 @@ export default function HomePage() {
                     </thead>
                     <tbody>
                       {sortedStatuses.map((s, idx) => (
-                        <tr key={`${s.sheet_name}-${s.extrato_id}-${idx}`}>
-                          <td>{s.sheet_name}</td>
+                        <tr key={`${s.sheet_name}-${s.extrato_id}-${s.aba_extrato ?? ""}-${idx}`}>
+                          {bankView === "bb" && (
+                            <td>{s.aba_extrato ? extratoTabLabelFromKey(extratoTabKeyFromRow(s)) : "-"}</td>
+                          )}
                           <td>{s.extrato_id}</td>
                           <td>{s.data}</td>
                           <td>{s.favorecido_descricao}</td>
@@ -1304,7 +2669,102 @@ export default function HomePage() {
                       ))}
                       {sortedStatuses.length === 0 && (
                         <tr>
-                          <td colSpan={8}>Sem linhas para os filtros selecionados.</td>
+                          <td colSpan={bankView === "bb" ? 8 : 7}>Sem linhas para os filtros selecionados.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {analysisView === "matches" && (
+          <>
+            <h2>Linhas conciliadas</h2>
+            <p className="subtitle">
+              Pares extrato ↔ comprovante da aba <b>conciliacao</b> do Excel ({bankView === "bb" ? "BB" : "Itaú"}).
+            </p>
+            {datasetError && <p className="error">{datasetError}</p>}
+            {!dataset && !datasetError && (
+              <p className="info-note">
+                {selectedRun?.status === "running" || selectedRun?.status === "queued"
+                  ? "Aguarde a conclusão da execução para carregar as conciliações."
+                  : "Aguardando dados da execução selecionada."}
+              </p>
+            )}
+            {dataset && (
+              <>
+                <div className="filter-row" style={{ marginBottom: 10 }}>
+                  <select value={filterField} onChange={(e) => setFilterField(e.target.value as typeof filterField)}>
+                    <option value="geral">Filtro geral</option>
+                    <option value="data">Data</option>
+                    <option value="id_extrato">ID Extrato</option>
+                    <option value="descricao">Categoria / Cliente</option>
+                    <option value="ref_sigra">Ref. Sigra</option>
+                  </select>
+                  <input
+                    type="text"
+                    placeholder="Filtrar conciliações…"
+                    value={filterValue}
+                    onChange={(e) => setFilterValue(e.target.value)}
+                  />
+                </div>
+                <p className="subtitle" style={{ marginBottom: 8 }}>
+                  Mostrando {sortedMatches.length} de {allMatches.length} linha(s) conciliada(s).
+                </p>
+                <div className="table-wrapper table-wrapper--scroll planilha-table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>ID Extrato</th>
+                        <th
+                          onClick={() => toggleMatchSort("data")}
+                          style={{ cursor: "pointer", userSelect: "none" }}
+                          title="Ordenar por data do extrato"
+                        >
+                          Data extrato {matchSort.field === "data" ? (matchSort.direction === "desc" ? "▼" : "▲") : ""}
+                        </th>
+                        <th
+                          onClick={() => toggleMatchSort("valor")}
+                          style={{ cursor: "pointer", userSelect: "none" }}
+                          title="Ordenar por valor do extrato"
+                        >
+                          Valor extrato{" "}
+                          {matchSort.field === "valor" ? (matchSort.direction === "desc" ? "▼" : "▲") : ""}
+                        </th>
+                        <th>ID Comprovante</th>
+                        <th>Data comp.</th>
+                        <th>Valor comp.</th>
+                        <th>Ref. Sigra</th>
+                        <th>Categoria</th>
+                        <th>Cliente</th>
+                        <th>Origem</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedMatches.map((m, idx) => (
+                        <tr key={`${m.extrato_id}-${m.comprovante_id}-${idx}`}>
+                          <td>{m.extrato_id}</td>
+                          <td>{m.data_extrato}</td>
+                          <td>{m.valor_extrato.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+                          <td>{m.comprovante_id}</td>
+                          <td>{m.data_comprovante}</td>
+                          <td>{m.valor_comprovante.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
+                          <td>{m.ref_sigra || "-"}</td>
+                          <td>{m.categoria || "-"}</td>
+                          <td>{m.cliente || "-"}</td>
+                          <td>{m.origem || "-"}</td>
+                        </tr>
+                      ))}
+                      {sortedMatches.length === 0 && (
+                        <tr>
+                          <td colSpan={10}>
+                            {allMatches.length === 0
+                              ? "Nenhuma linha na aba conciliacao desta execução."
+                              : "Sem linhas para os filtros selecionados."}
+                          </td>
                         </tr>
                       )}
                     </tbody>
@@ -1344,6 +2804,76 @@ export default function HomePage() {
       </section>
           </main>
         )}
+            </div>
+          </div>
+
+          <KivoAssistant username={currentUser.username} />
+
+          <nav className="platform-bottomnav" aria-label="Navegação por setor">
+            <div className="platform-bottomnav-pills">
+              <button
+                type="button"
+                className={`platform-nav-pill ${activeView === "inicio" ? "active" : ""}`}
+                onClick={() => setActiveView("inicio")}
+              >
+                Início
+              </button>
+              {visibleSectors.map((sector) => (
+                <button
+                  key={sector.key}
+                  type="button"
+                  className={`platform-nav-pill ${activeView === sector.key ? "active" : ""}`}
+                  onClick={() => setActiveView(sector.key)}
+                >
+                  {sector.label}
+                </button>
+              ))}
+              {activeView === "operacoes" && (
+                <>
+                  <span className="platform-bottomnav-divider" aria-hidden="true" />
+                  <button
+                    type="button"
+                    className={`platform-nav-pill ${operationsView === "importacao" ? "active" : ""}`}
+                    onClick={() => setOperationsView("importacao")}
+                  >
+                    Importação
+                  </button>
+                  <button
+                    type="button"
+                    className={`platform-nav-pill ${operationsView === "exportacao" ? "active" : ""}`}
+                    onClick={() => setOperationsView("exportacao")}
+                  >
+                    Exportação
+                  </button>
+                </>
+              )}
+              <span className="platform-bottomnav-divider" aria-hidden="true" />
+              <button
+                type="button"
+                className={`platform-nav-pill platform-nav-pill--settings ${activeView === "configuracoes" ? "active" : ""}`}
+                onClick={() => setActiveView("configuracoes")}
+              >
+                Configurações
+                {currentUser.role === "admin" && pendingCount > 0 && (
+                  <span className="platform-nav-badge">{pendingCount > 9 ? "9+" : pendingCount}</span>
+                )}
+              </button>
+            </div>
+            <div className="platform-bottomnav-actions">
+              <span className="platform-bottomnav-user muted">
+                {currentUser.username}
+              </span>
+              <button
+                type="button"
+                className="btn-secondary platform-bottomnav-logout"
+                onClick={() => handleLogout().catch(() => null)}
+              >
+                Sair
+              </button>
+            </div>
+          </nav>
+          <span className="platform-bottomnav-hint" aria-hidden="true" />
+        </div>
       </div>
     </div>
   );

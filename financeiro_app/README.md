@@ -68,6 +68,8 @@ Serviços:
    - `CORS_ORIGINS` (incluindo seu domínio Vercel)
    - `AUTOMATION_WORKSPACE=/opt/render/project/src/financeiro_app`
    - `RECOVER_INTERRUPTED_RUNS=true`
+   - (opcional) `BB_OUTPUT_PATH` — caminho do Excel de saída da conciliação BB; padrão: `output/runs/run_<id>/conciliacao_bb.xlsx` por rodada
+   - (opcional) `BB_INPUT_FOLDER` — pasta com extrato/PGTO; definida automaticamente pelo app ao enviar arquivos
 
 ### Frontend no Vercel
 

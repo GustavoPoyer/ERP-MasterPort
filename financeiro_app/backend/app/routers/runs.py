@@ -1,8 +1,10 @@
 import json
 import os
 import threading
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -10,7 +12,7 @@ from ..automations.registry import get_automation, validate_uploaded_filenames, 
 from ..db import get_db
 from ..models import ReconciliationRun, RunMatchRow, RunMetric, RunStatusRow
 from ..schemas import RunCreate, RunDatasetRead, RunRead
-from ..services.run_service import cleanup_temp_dir, create_run, create_temp_run_dir, execute_run
+from ..services.run_service import cleanup_temp_dir, create_run, create_temp_run_dir, execute_run, resolve_run_output_file
 from ..services.auth_service import require_sector
 
 
@@ -149,6 +151,37 @@ def get_run(run_id: int, db: Session = Depends(get_db), _: object = Depends(requ
     if not run:
         raise HTTPException(status_code=404, detail="Execução não encontrada.")
     return run
+
+
+@router.get("/{run_id}/download")
+def download_run_output(
+    run_id: int,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_sector("financeiro")),
+):
+    run = db.get(ReconciliationRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Execução não encontrada.")
+    if run.status != "completed":
+        raise HTTPException(status_code=400, detail="Download disponível apenas para execuções concluídas.")
+
+    try:
+        file_path = resolve_run_output_file(run)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Arquivo de saída não encontrado no servidor.")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    filename = file_path.name
+    if run.automation_key:
+        prefix = run.automation_key.replace("_", "-")
+        filename = f"conciliacao_{prefix}_run_{run.id}.xlsx"
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=filename,
+    )
 
 
 @router.get("/{run_id}/dataset", response_model=RunDatasetRead)

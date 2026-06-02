@@ -61,6 +61,7 @@ class RunMatchRowRead(BaseModel):
 class RunStatusRowRead(BaseModel):
     sheet_name: str
     extrato_id: str
+    aba_extrato: str = ""
     data: str
     valor_extrato: float
     saldo: float
@@ -88,6 +89,37 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=80)
+    password: str = Field(min_length=6, max_length=128)
+    sector: str = Field(default="financeiro", max_length=80)
+
+
+class RegisterPendingResponse(BaseModel):
+    status: str = "pending"
+    message: str
+    username: str
+    requested_sector: str
+
+
+class PendingCountResponse(BaseModel):
+    count: int
+
+
+class PendingUserRead(BaseModel):
+    id: int
+    username: str
+    requested_sector: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ApproveUserRequest(BaseModel):
+    sector: str = Field(..., min_length=1, max_length=80)
+
+
 class UserProfile(BaseModel):
     id: int
     username: str
@@ -102,3 +134,46 @@ class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserProfile
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=80)
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+    reset_url: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=16, max_length=256)
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+class AdminResetPasswordRequest(BaseModel):
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+class AdminPasswordResetLinkResponse(BaseModel):
+    username: str
+    reset_url: str
+    expires_at: datetime
+
+
+class SessionRead(BaseModel):
+    id: int
+    created_at: datetime
+    expires_at: datetime
+    is_current: bool = False
+
+    class Config:
+        from_attributes = True

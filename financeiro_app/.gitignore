@@ -3,5 +3,6 @@ frontend/node_modules/
 frontend/.next/
 backend/financeiro_app.db
 downloads/
+output/
 **/__pycache__/
 *.pyc

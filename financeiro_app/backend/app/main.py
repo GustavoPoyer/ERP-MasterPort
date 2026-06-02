@@ -8,7 +8,11 @@ from sqlalchemy import inspect, text
 from .config import settings
 from .db import Base, SessionLocal, engine
 from .routers import auth, automations, runs
-from .services.auth_service import cleanup_expired_sessions, ensure_default_users
+from .services.auth_service import (
+    cleanup_expired_password_resets,
+    cleanup_expired_sessions,
+    ensure_default_users,
+)
 from .services.run_service import mark_stale_runs_as_failed, recover_stale_runs_on_startup
 
 if sys.platform.startswith("win"):
@@ -29,16 +33,27 @@ app.add_middleware(
 def ensure_schema_compatibility() -> None:
     with engine.begin() as conn:
         inspector = inspect(conn)
-        if "run_status_rows" not in inspector.get_table_names():
-            return
-
-        current_columns = {col["name"] for col in inspector.get_columns("run_status_rows")}
-        if "saldo" in current_columns:
-            return
-
+        table_names = inspector.get_table_names()
         dialect = conn.dialect.name.lower()
-        column_type = "DOUBLE PRECISION" if dialect in {"postgresql", "postgres"} else "FLOAT"
-        conn.execute(text(f"ALTER TABLE run_status_rows ADD COLUMN saldo {column_type} NOT NULL DEFAULT 0"))
+        text_type = "VARCHAR(80)" if dialect in {"postgresql", "postgres"} else "VARCHAR(80)"
+
+        if "run_status_rows" in table_names:
+            current_columns = {col["name"] for col in inspector.get_columns("run_status_rows")}
+
+            if "saldo" not in current_columns:
+                column_type = "DOUBLE PRECISION" if dialect in {"postgresql", "postgres"} else "FLOAT"
+                conn.execute(text(f"ALTER TABLE run_status_rows ADD COLUMN saldo {column_type} NOT NULL DEFAULT 0"))
+
+            if "aba_extrato" not in current_columns:
+                conn.execute(text(f"ALTER TABLE run_status_rows ADD COLUMN aba_extrato {text_type} NOT NULL DEFAULT ''"))
+
+        if "app_users" in table_names:
+            user_columns = {col["name"] for col in inspector.get_columns("app_users")}
+            if "approval_status" not in user_columns:
+                conn.execute(
+                    text("ALTER TABLE app_users ADD COLUMN approval_status VARCHAR(30) NOT NULL DEFAULT 'approved'")
+                )
+                conn.execute(text("UPDATE app_users SET approval_status = 'approved' WHERE approval_status IS NULL"))
 
 
 @app.on_event("startup")
@@ -48,6 +63,7 @@ def startup() -> None:
     db = SessionLocal()
     try:
         cleanup_expired_sessions(db)
+        cleanup_expired_password_resets(db)
         ensure_default_users(db)
     finally:
         db.close()

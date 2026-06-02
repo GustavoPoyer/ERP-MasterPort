@@ -34,6 +34,7 @@ def run_python_script(
     script_name: str,
     on_log: Callable[[str], None] | None = None,
     fallback_script_names: list[str] | None = None,
+    env_extra: dict[str, str] | None = None,
 ) -> AutomationResult:
     script_candidates = [script_name, *(fallback_script_names or [])]
     run_cwd, script_path = _resolver_script_path(workspace, script_candidates)
@@ -43,6 +44,10 @@ def run_python_script(
             logs=f"Script não encontrado: {script_path}",
         )
 
+    env = os.environ.copy()
+    if env_extra:
+        env.update({k: v for k, v in env_extra.items() if v is not None})
+
     proc = subprocess.Popen(
         ["python", script_path],
         cwd=run_cwd,
@@ -51,6 +56,7 @@ def run_python_script(
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     log_lines: list[str] = []
     if proc.stdout is not None:

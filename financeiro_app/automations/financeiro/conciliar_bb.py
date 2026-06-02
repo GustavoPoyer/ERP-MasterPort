@@ -19,6 +19,16 @@ import sys
 import warnings
 warnings.filterwarnings('ignore')
 
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
+from runtime_paths import (
+    ensure_parent_dir,
+    financeiro_app_root,
+    resolve_bb_output_path,
+    resolve_input_folder,
+)
+
 if sys.platform == 'win32':
     # Evita falhas de UnicodeEncodeError ao imprimir símbolos no terminal do Windows.
     try:
@@ -61,38 +71,95 @@ COLUNAS_COMPROVANTES = {
     'rps': 'RPS'  # Coluna L: RPS (código que corresponde ao Documento do extrato)
 }
 
-# Caminho de saída
-CAMINHO_SAIDA = r'G:\Drives compartilhados\automação\Conciliações\conciliacao_bb_final.xlsx'
+# Caminho de saída (resolvido em runtime; legado G: só se BB_OUTPUT_PATH apontar para lá)
+CAMINHO_SAIDA = None
 
 
 # ============================================================================
 # FUNÇÕES DE LEITURA E NORMALIZAÇÃO
 # ============================================================================
 
+MESES_BB = {
+    1: ['JANEIRO', 'JAN'],
+    2: ['FEVEREIRO', 'FEV'],
+    3: ['MARÇO', 'MARCO', 'MAR'],
+    4: ['ABRIL', 'ABR'],
+    5: ['MAIO', 'MAI'],
+    6: ['JUNHO', 'JUN'],
+    7: ['JULHO', 'JUL'],
+    8: ['AGOSTO', 'AGO'],
+    9: ['SETEMBRO', 'SET'],
+    10: ['OUTUBRO', 'OUT'],
+    11: ['NOVEMBRO', 'NOV'],
+    12: ['DEZEMBRO', 'DEZ'],
+}
+
+
+def _mes_da_aba_bb(nome_aba: str) -> int | None:
+    """Retorna número do mês (1-12) se o nome da aba parecer mês do extrato BB."""
+    nome = (nome_aba or '').upper()
+    for mes_num, aliases in MESES_BB.items():
+        for alias in aliases:
+            if alias in nome:
+                return mes_num
+    return None
+
+
+def _listar_abas_mensais_bb(sheet_names: list[str]) -> list[str]:
+    abas = [s for s in sheet_names if _mes_da_aba_bb(s) is not None]
+    return sorted(abas, key=lambda s: (_mes_da_aba_bb(s) or 0, s))
+
+
+def _ler_aba_extrato_bb(caminho: str, sheet_name) -> pd.DataFrame:
+    df = pd.read_excel(caminho, sheet_name=sheet_name, engine='openpyxl')
+
+    if any('Unnamed' in str(col) for col in df.columns):
+        for skip_rows in range(0, 10):
+            try:
+                df_teste = pd.read_excel(
+                    caminho, sheet_name=sheet_name, skiprows=skip_rows, engine='openpyxl'
+                )
+                if not any('Unnamed' in str(col) for col in df_teste.columns[:3]):
+                    df = df_teste
+                    print(f"[INFO] Aba '{sheet_name}': cabeçalho na linha {skip_rows + 1}")
+                    break
+            except Exception:
+                continue
+
+    df = df.dropna(how='all')
+
+    col_hist = 'Historico' if 'Historico' in df.columns else ('historico' if 'historico' in df.columns else None)
+    if col_hist:
+        df = df[~df[col_hist].astype(str).str.contains('Saldo Anterior', case=False, na=False)]
+
+    df = df.copy()
+    df['Aba Extrato'] = str(sheet_name)
+    return df
+
+
 def ler_extrato(caminho):
     """
     Lê o arquivo Excel do extrato bancário.
-    Para BB: detecta automaticamente a aba do mês atual (ex.: FEVEREIRO26).
-    
-    Args:
-        caminho: Caminho do arquivo Excel
-        
-    Returns:
-        DataFrame com os dados do extrato
+    Para BB: se houver várias abas mensais (JANEIRO26, FEVEREIRO26, ...), consolida todas.
     """
     try:
-        # Abre o arquivo para detectar abas
         xl = pd.ExcelFile(caminho, engine='openpyxl')
-        
-        # Detecta aba do mês atual (ex.: fevereiro → "FEVEREIRO26" ou "FEV26")
+        abas_mensais = _listar_abas_mensais_bb(xl.sheet_names)
+
+        if len(abas_mensais) > 1:
+            print(f"[INFO] Extrato com {len(abas_mensais)} abas mensais — consolidando todas:")
+            partes = []
+            for sheet_name in abas_mensais:
+                df_aba = _ler_aba_extrato_bb(caminho, sheet_name)
+                print(f"  - {sheet_name}: {len(df_aba)} linha(s)")
+                partes.append(df_aba)
+            df = pd.concat(partes, ignore_index=True)
+            print(f"[OK] Extrato carregado: {len(df)} lançamentos ({len(abas_mensais)} abas)")
+            return df
+
         mes_atual = datetime.now().month
-        meses = {1: ['JANEIRO', 'JAN'], 2: ['FEVEREIRO', 'FEV'], 3: ['MARÇO', 'MARCO', 'MAR'], 
-                 4: ['ABRIL', 'ABR'], 5: ['MAIO', 'MAI'], 6: ['JUNHO', 'JUN'],
-                 7: ['JULHO', 'JUL'], 8: ['AGOSTO', 'AGO'], 9: ['SETEMBRO', 'SET'],
-                 10: ['OUTUBRO', 'OUT'], 11: ['NOVEMBRO', 'NOV'], 12: ['DEZEMBRO', 'DEZ']}
-        
         sheet_name = None
-        nomes_mes_atual = meses.get(mes_atual, [])
+        nomes_mes_atual = MESES_BB.get(mes_atual, [])
         for nome_mes in nomes_mes_atual:
             for sheet in xl.sheet_names:
                 if nome_mes.upper() in sheet.upper():
@@ -100,37 +167,14 @@ def ler_extrato(caminho):
                     break
             if sheet_name:
                 break
-        
+
         if sheet_name:
             print(f"[INFO] Usando aba do mês atual: '{sheet_name}'")
         else:
-            # Fallback: usa a última aba (normalmente o mês mais recente)
-            sheet_name = xl.sheet_names[-1] if xl.sheet_names else 0
-            print(f"[INFO] Aba do mês atual não encontrada, usando aba mais recente: '{sheet_name}'")
-        
-        df = pd.read_excel(caminho, sheet_name=sheet_name, engine='openpyxl')
-        
-        # Se tem colunas "Unnamed", tenta encontrar o cabeçalho correto
-        if any('Unnamed' in str(col) for col in df.columns):
-            for skip_rows in range(0, 10):
-                try:
-                    df_teste = pd.read_excel(caminho, sheet_name=sheet_name, skiprows=skip_rows, engine='openpyxl')
-                    if not any('Unnamed' in str(col) for col in df_teste.columns[:3]):
-                        df = df_teste
-                        print(f"[INFO] Cabeçalho encontrado na linha {skip_rows + 1}")
-                        break
-                except:
-                    continue
-        
-        # Remove linhas completamente vazias
-        df = df.dropna(how='all')
-        
-        # Remove "Saldo Anterior" e outras linhas que não são transações
-        if 'Historico' in df.columns:
-            df = df[~df['Historico'].str.contains('Saldo Anterior', case=False, na=False)]
-        elif 'historico' in df.columns:
-            df = df[~df['historico'].str.contains('Saldo Anterior', case=False, na=False)]
-        
+            sheet_name = abas_mensais[0] if abas_mensais else (xl.sheet_names[-1] if xl.sheet_names else 0)
+            print(f"[INFO] Aba do mês atual não encontrada, usando: '{sheet_name}'")
+
+        df = _ler_aba_extrato_bb(caminho, sheet_name)
         print(f"[OK] Extrato carregado: {len(df)} lançamentos (aba: {sheet_name})")
         return df
     except Exception as e:
@@ -1962,6 +2006,12 @@ def criar_aba_status_extrato(df_extrato, df_conciliacao, df_extratos_pendentes, 
         valor_extrato = extrato_row.get('valor', 0)
         data_extrato = extrato_row.get('data_original', '')
         favorecido = extrato_row.get('favorecido_original', '')
+        aba_extrato = ''
+        for col_aba in ('Aba Extrato', 'aba_extrato'):
+            if col_aba in extrato_row.index and pd.notna(extrato_row.get(col_aba)):
+                aba_extrato = str(extrato_row.get(col_aba)).strip()
+                if aba_extrato:
+                    break
         
         # Busca categoria do extrato (se existir)
         categoria_extrato = '-'
@@ -2044,6 +2094,7 @@ def criar_aba_status_extrato(df_extrato, df_conciliacao, df_extratos_pendentes, 
         
         status_lista.append({
             'ID Extrato': id_extrato,
+            'Aba Extrato': aba_extrato,
             'Data': data_extrato,
             'Valor Extrato': abs(valor_extrato) if valor_extrato else 0,
             'Favorecido/Descrição': str(favorecido)[:60] if favorecido else '',
@@ -2678,6 +2729,9 @@ def gerar_excel_final(df_extrato, df_comprovantes, df_conciliacao,
     print("\n" + "="*80)
     print("GERANDO ARQUIVO EXCEL FINAL")
     print("="*80)
+
+    ensure_parent_dir(caminho_saida)
+    print(f"[INFO] Salvando Excel em: {caminho_saida}")
     
     # Tenta gerar o arquivo, se estiver aberto, usa nome alternativo
     caminho_final = caminho_saida
@@ -2873,23 +2927,25 @@ def gerar_excel_final(df_extrato, df_comprovantes, df_conciliacao,
 # FUNÇÃO DE BUSCA DE ARQUIVOS
 # ============================================================================
 
-def buscar_arquivos_bb():
+def buscar_arquivos_bb(pasta_entrada=None):
     """
     Busca automaticamente os arquivos do Banco do Brasil na pasta do dia de hoje.
     
     Returns:
         Tupla com (caminho_extrato, caminho_comprovantes)
     """
-    # Obtém o diretório do script
     script_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+
+    if pasta_entrada and os.path.isdir(pasta_entrada):
+        pasta_downloads = os.path.abspath(pasta_entrada)
+    else:
+        # Obtém a data de hoje no formato YYYY-MM-DD
+        data_hoje = datetime.now().strftime('%Y-%m-%d')
+        pasta_base = os.path.join(script_dir, 'downloads')
+        pasta_downloads = os.path.join(pasta_base, data_hoje)
     
-    # Obtém a data de hoje no formato YYYY-MM-DD
-    data_hoje = datetime.now().strftime('%Y-%m-%d')
-    pasta_base = os.path.join(script_dir, 'downloads')
-    pasta_downloads = os.path.join(pasta_base, data_hoje)
-    
-    # Se pasta do dia não existe, usa a mais recente disponível
-    if not os.path.exists(pasta_downloads):
+    # Se pasta do dia não existe, usa a mais recente disponível (somente modo automático)
+    if pasta_entrada is None and not os.path.exists(pasta_downloads):
         if os.path.exists(pasta_base):
             pastas = []
             for item in os.listdir(pasta_base):
@@ -2989,7 +3045,7 @@ def buscar_arquivos_bb():
 # FUNÇÃO PRINCIPAL
 # ============================================================================
 
-def conciliar_bb(caminho_extrato=None, caminho_comprovantes=None, data_inicio=None):
+def conciliar_bb(caminho_extrato=None, caminho_comprovantes=None, data_inicio=None, pasta_entrada=None):
     """
     Executa a conciliação do Banco do Brasil e retorna os DataFrames.
     
@@ -3002,7 +3058,7 @@ def conciliar_bb(caminho_extrato=None, caminho_comprovantes=None, data_inicio=No
     """
     # Se não foram fornecidos caminhos, busca automaticamente
     if caminho_extrato is None or caminho_comprovantes is None:
-        caminho_extrato, caminho_comprovantes = buscar_arquivos_bb()
+        caminho_extrato, caminho_comprovantes = buscar_arquivos_bb(pasta_entrada=pasta_entrada)
     
     # 1. Ler arquivos
     print("\n[BB] Lendo arquivos...")
@@ -3048,12 +3104,23 @@ def main():
     print("="*80)
     
     try:
+        app_root = financeiro_app_root()
+        pasta_entrada = resolve_input_folder()
+        run_id_raw = os.environ.get("BB_RUN_ID", "").strip()
+        run_id = int(run_id_raw) if run_id_raw.isdigit() else None
+        caminho_saida = resolve_bb_output_path(app_root=app_root, run_id=run_id)
+
+        if pasta_entrada:
+            print(f"[INFO] Pasta de entrada (rodada): {pasta_entrada}")
+        print(f"[INFO] Arquivo de saída: {caminho_saida}")
+
         # Modo incremental: concilia somente a partir do dia seguinte ao último dia presente em 'Status Extrato'
-        data_inicio = obter_data_inicio_status_extrato(CAMINHO_SAIDA)
+        data_inicio = obter_data_inicio_status_extrato(caminho_saida)
 
         # Executa conciliação
         df_extrato, df_comprovantes, df_conciliacao, df_extratos_pendentes, df_comprovantes_pendentes = conciliar_bb(
-            data_inicio=data_inicio
+            data_inicio=data_inicio,
+            pasta_entrada=pasta_entrada,
         )
         
         # 5. Gerar Excel final
@@ -3061,7 +3128,7 @@ def main():
         caminho_excel_gerado = gerar_excel_final(
             df_extrato, df_comprovantes, df_conciliacao,
             df_extratos_pendentes, df_comprovantes_pendentes,
-            CAMINHO_SAIDA,
+            caminho_saida,
             data_inicio=data_inicio
         )
         
