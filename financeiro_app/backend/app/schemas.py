@@ -10,8 +10,33 @@ class AutomationInfo(BaseModel):
     description: str
 
 
+class FinanceAccountRead(BaseModel):
+    id: int
+    bank: str
+    name: str
+    slug: str
+    sort_order: int
+    is_active: int
+
+    class Config:
+        from_attributes = True
+
+
+class FinanceAccountCreate(BaseModel):
+    bank: str = Field(..., examples=["bb", "itau_sigra"])
+    name: str = Field(..., min_length=1, max_length=120)
+    slug: str | None = Field(default=None, max_length=80)
+
+
+class FinanceAccountUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    sort_order: int | None = None
+    is_active: bool | None = None
+
+
 class RunCreate(BaseModel):
     automation_key: str = Field(..., examples=["bb", "itau_sigra"])
+    account_id: int = Field(..., ge=1)
     triggered_by: str = "financeiro"
     parameters: dict[str, Any] = Field(default_factory=dict)
 
@@ -19,6 +44,8 @@ class RunCreate(BaseModel):
 class RunRead(BaseModel):
     id: int
     automation_key: str
+    account_id: int | None = None
+    account_name: str | None = None
     status: str
     triggered_by: str
     parameters_json: str

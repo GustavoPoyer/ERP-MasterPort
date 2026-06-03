@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 
 from ..automations.registry import get_automation, validate_uploaded_filenames, validate_uploaded_slots
 from ..db import get_db
-from ..models import ReconciliationRun, RunMatchRow, RunMetric, RunStatusRow
+from ..models import FinanceAccount, ReconciliationRun, RunMatchRow, RunMetric, RunStatusRow
 from ..schemas import RunCreate, RunDatasetRead, RunRead
+from ..services.account_service import account_name_map, get_active_account
 from ..services.run_service import cleanup_temp_dir, create_run, create_temp_run_dir, execute_run, resolve_run_output_file
 from ..services.auth_service import require_sector
 
@@ -23,6 +24,39 @@ def enqueue_run(run_id: int) -> None:
     threading.Thread(target=execute_run, args=(run_id,), daemon=True).start()
 
 
+def _serialize_run(run: ReconciliationRun, names: dict[int, str]) -> RunRead:
+    base = RunRead.model_validate(run)
+    if run.account_id:
+        return base.model_copy(update={"account_name": names.get(run.account_id)})
+    return base
+
+
+def _serialize_runs(db: Session, runs: list[ReconciliationRun]) -> list[RunRead]:
+    ids = [r.account_id for r in runs if r.account_id]
+    names = account_name_map(db, ids)
+    return [_serialize_run(run, names) for run in runs]
+
+
+def _find_running_run(db: Session, automation_key: str, account_id: int) -> ReconciliationRun | None:
+    return db.scalar(
+        select(ReconciliationRun)
+        .where(
+            ReconciliationRun.automation_key == automation_key,
+            ReconciliationRun.account_id == account_id,
+            ReconciliationRun.status.in_(["queued", "running"]),
+        )
+        .order_by(ReconciliationRun.created_at.desc())
+        .limit(1)
+    )
+
+
+def _resolve_account_for_run(db: Session, automation_key: str, account_id: int) -> FinanceAccount:
+    try:
+        return get_active_account(db, account_id, bank=automation_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("", response_model=RunRead)
 def trigger_run(
     payload: RunCreate,
@@ -32,38 +66,38 @@ def trigger_run(
     if not get_automation(payload.automation_key):
         raise HTTPException(status_code=400, detail="Automação inválida.")
 
-    lock_stmt = (
-        select(ReconciliationRun)
-        .where(
-            ReconciliationRun.automation_key == payload.automation_key,
-            ReconciliationRun.status.in_(["queued", "running"]),
-        )
-        .order_by(ReconciliationRun.created_at.desc())
-        .limit(1)
-    )
-    existing = db.scalar(lock_stmt)
+    account = _resolve_account_for_run(db, payload.automation_key, payload.account_id)
+    existing = _find_running_run(db, payload.automation_key, account.id)
     if existing:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Já existe execução em andamento para '{payload.automation_key}' "
+                f"Já existe execução em andamento para a conta '{account.name}' "
                 f"(run #{existing.id}, status={existing.status})."
             ),
         )
 
+    parameters = {
+        **(payload.parameters or {}),
+        "account_id": account.id,
+        "account_name": account.name,
+        "account_slug": account.slug,
+    }
     run = create_run(
         db=db,
         automation_key=payload.automation_key,
         triggered_by=payload.triggered_by,
-        parameters=payload.parameters,
+        parameters=parameters,
+        account_id=account.id,
     )
     enqueue_run(run.id)
-    return run
+    return _serialize_run(run, {account.id: account.name})
 
 
 @router.post("/upload", response_model=RunRead)
 async def trigger_run_with_upload(
     automation_key: str = Form(...),
+    account_id: int = Form(...),
     triggered_by: str = Form("financeiro"),
     parameters_json: str = Form("{}"),
     slot_keys: list[str] | None = Form(None),
@@ -92,21 +126,13 @@ async def trigger_run_with_upload(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="parameters_json inválido.")
 
-    lock_stmt = (
-        select(ReconciliationRun)
-        .where(
-            ReconciliationRun.automation_key == automation_key,
-            ReconciliationRun.status.in_(["queued", "running"]),
-        )
-        .order_by(ReconciliationRun.created_at.desc())
-        .limit(1)
-    )
-    existing = db.scalar(lock_stmt)
+    account = _resolve_account_for_run(db, automation_key, account_id)
+    existing = _find_running_run(db, automation_key, account.id)
     if existing:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Já existe execução em andamento para '{automation_key}' "
+                f"Já existe execução em andamento para a conta '{account.name}' "
                 f"(run #{existing.id}, status={existing.status})."
             ),
         )
@@ -128,21 +154,41 @@ async def trigger_run_with_upload(
             }
         )
 
-    parameters = {**parameters, "uploaded_files": uploaded_entries, "temp_dir": temp_dir}
+    parameters = {
+        **parameters,
+        "uploaded_files": uploaded_entries,
+        "temp_dir": temp_dir,
+        "account_id": account.id,
+        "account_name": account.name,
+        "account_slug": account.slug,
+    }
     run = create_run(
         db=db,
         automation_key=automation_key,
         triggered_by=triggered_by,
         parameters=parameters,
+        account_id=account.id,
     )
     enqueue_run(run.id)
-    return run
+    return _serialize_run(run, {account.id: account.name})
 
 
 @router.get("", response_model=list[RunRead])
-def list_runs(db: Session = Depends(get_db), _: object = Depends(require_sector("financeiro"))):
-    stmt = select(ReconciliationRun).order_by(ReconciliationRun.created_at.desc()).limit(100)
-    return list(db.scalars(stmt))
+def list_runs(
+    automation_key: str | None = Query(default=None),
+    account_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _: object = Depends(require_sector("financeiro")),
+):
+    stmt = select(ReconciliationRun).order_by(ReconciliationRun.created_at.desc()).limit(200)
+    if automation_key:
+        if not get_automation(automation_key):
+            raise HTTPException(status_code=400, detail="Automação inválida.")
+        stmt = stmt.where(ReconciliationRun.automation_key == automation_key)
+    if account_id is not None:
+        stmt = stmt.where(ReconciliationRun.account_id == account_id)
+    runs = list(db.scalars(stmt))
+    return _serialize_runs(db, runs)
 
 
 @router.get("/{run_id}", response_model=RunRead)
@@ -150,7 +196,7 @@ def get_run(run_id: int, db: Session = Depends(get_db), _: object = Depends(requ
     run = db.get(ReconciliationRun, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Execução não encontrada.")
-    return run
+    return _serialize_runs(db, [run])[0]
 
 
 @router.get("/{run_id}/download")
@@ -173,9 +219,15 @@ def download_run_output(
         raise HTTPException(status_code=400, detail=str(exc))
 
     filename = file_path.name
+    try:
+        params = json.loads(run.parameters_json or "{}")
+    except json.JSONDecodeError:
+        params = {}
+    account_slug = (params.get("account_slug") or "").strip()
     if run.automation_key:
         prefix = run.automation_key.replace("_", "-")
-        filename = f"conciliacao_{prefix}_run_{run.id}.xlsx"
+        slug_part = f"_{account_slug}" if account_slug else ""
+        filename = f"conciliacao_{prefix}{slug_part}_run_{run.id}.xlsx"
 
     return FileResponse(
         path=str(file_path),
@@ -231,6 +283,7 @@ def delete_run(run_id: int, db: Session = Depends(get_db), _: object = Depends(r
 @router.delete("")
 def clear_runs(
     automation_key: str | None = Query(default=None),
+    account_id: int | None = Query(default=None),
     db: Session = Depends(get_db),
     _: object = Depends(require_sector("financeiro")),
 ):
@@ -239,6 +292,8 @@ def clear_runs(
         if not get_automation(automation_key):
             raise HTTPException(status_code=400, detail="Automação inválida.")
         stmt = stmt.where(ReconciliationRun.automation_key == automation_key)
+    if account_id is not None:
+        stmt = stmt.where(ReconciliationRun.account_id == account_id)
     runs = list(db.scalars(stmt))
     total = len(runs)
     for run in runs:

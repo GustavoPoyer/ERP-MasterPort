@@ -16,11 +16,22 @@ from ..config import settings
 from ..models import ReconciliationRun, RunMatchRow, RunMetric, RunStatusRow
 
 
-def create_run(db: Session, automation_key: str, triggered_by: str, parameters: dict) -> ReconciliationRun:
+def create_run(
+    db: Session,
+    automation_key: str,
+    triggered_by: str,
+    parameters: dict,
+    *,
+    account_id: int | None = None,
+) -> ReconciliationRun:
+    merged = dict(parameters or {})
+    if account_id is not None:
+        merged["account_id"] = account_id
     run = ReconciliationRun(
         automation_key=automation_key,
+        account_id=account_id,
         triggered_by=triggered_by,
-        parameters_json=json.dumps(parameters or {}, ensure_ascii=False),
+        parameters_json=json.dumps(merged, ensure_ascii=False),
         status="queued",
     )
     db.add(run)
