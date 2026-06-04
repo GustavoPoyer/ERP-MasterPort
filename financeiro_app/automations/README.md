@@ -11,10 +11,15 @@ Este diretório centraliza as automações executadas pelo aplicativo.
 - `shared/`: utilitários compartilhados
   - `acessar_drive.py`
 
-## Próximos setores
+## Operações (Comex)
 
-- `comex/`: importação e exportação (comércio exterior)
-- `rh/`: rotinas de pessoal e folha
+- `operacoes/importacao/`: coloque `run_importacao.py` (sua automação de importação)
+- `operacoes/exportacao/`: rotinas de exportação (futuro)
+- Adapter registrado no backend: chave `operacoes_importacao`
+
+## Outros setores
+
+- `rh/`: rotinas de pessoal e folha (módulo RH na plataforma)
 
 No backend, os runners já priorizam os scripts em `automations/financeiro/` e mantêm fallback para os caminhos antigos.
 Os scripts financeiros buscam arquivos em `financeiro_app/downloads/`.

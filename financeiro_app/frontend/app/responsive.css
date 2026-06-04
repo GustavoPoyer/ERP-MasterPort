@@ -1,29 +1,33 @@
 /* Responsivo KIVO — fluido em 2K, 1080p e mobile */
 
 :root {
-  --kivo-shell-pad-x: clamp(12px, 2.5vw, 28px);
-  --kivo-shell-pad-y: clamp(12px, 2vh, 28px);
-  --kivo-frame-max: clamp(1100px, 96vw, 1780px);
+  --kivo-shell-pad-x: clamp(10px, 2vw, 20px);
+  --kivo-shell-pad-y: clamp(10px, 2vh, 20px);
+  /* Painel flutuante centralizado — ~80% × ~78% da viewport (ref. glass) */
+  --kivo-frame-width: min(80vw, 1320px);
+  --kivo-frame-height: min(78dvh, 880px);
+  --kivo-frame-max: var(--kivo-frame-width);
   --kivo-dash-pad-x: clamp(14px, 2vw, 28px);
   --kivo-dash-pad-bottom: clamp(56px, 8vh, 72px);
-  /* Painéis “larguinhos” — crescem com a tela, encolhem no mobile */
   --kivo-dash-home-max: clamp(760px, 74vw, 1260px);
   --kivo-dash-settings-max: clamp(700px, 64vw, 1120px);
   --kivo-dash-module-max: clamp(640px, 58vw, 1000px);
   --kivo-bottomnav-max: clamp(720px, 72vw, 1100px);
-  --kivo-frame-height: calc(100dvh - 100px);
 }
 
 /* Base fluida (desktop médio/grande) */
 .platform-shell {
-  padding: var(--kivo-shell-pad-y) var(--kivo-shell-pad-x) calc(var(--kivo-shell-pad-y) + 12px);
-  align-items: stretch;
+  padding: var(--kivo-shell-pad-y) var(--kivo-shell-pad-x) calc(var(--kivo-shell-pad-y) + 8px);
+  align-items: center;
+  justify-content: center;
 }
 
 .platform-frame {
-  width: 100%;
-  max-width: var(--kivo-frame-max);
-  min-height: min(720px, calc(100dvh - 96px));
+  width: var(--kivo-frame-width);
+  max-width: var(--kivo-frame-width);
+  height: var(--kivo-frame-height);
+  min-height: var(--kivo-frame-height);
+  max-height: var(--kivo-frame-height);
 }
 
 .platform-dashboard {
@@ -119,8 +123,8 @@
   }
 
   .platform-frame {
-    width: min(98vw, 1520px);
-    max-width: min(98vw, 1520px);
+    width: var(--kivo-frame-width);
+    max-width: var(--kivo-frame-width);
   }
 
   .platform-dashboard {
@@ -141,14 +145,20 @@
 @media (max-width: 1080px) {
   .platform-shell {
     padding: 12px 12px 20px;
+    align-items: center;
+  }
+
+  :root {
+    --kivo-frame-width: min(94vw, 100%);
+    --kivo-frame-height: min(86dvh, calc(100dvh - 80px));
   }
 
   .platform-frame {
-    width: 100%;
-    max-width: 100%;
-    height: auto;
-    min-height: min(60dvh, calc(100dvh - 120px));
-    max-height: none;
+    width: var(--kivo-frame-width);
+    max-width: var(--kivo-frame-width);
+    height: var(--kivo-frame-height);
+    min-height: var(--kivo-frame-height);
+    max-height: var(--kivo-frame-height);
   }
 
   .platform-dashboard {
@@ -273,14 +283,25 @@
   .platform-shell {
     padding: 8px 8px 16px;
     min-height: 100dvh;
+    align-items: stretch;
+  }
+
+  :root {
+    --kivo-frame-width: 100%;
+    --kivo-frame-height: calc(100dvh - 16px);
+  }
+
+  .platform-frame {
+    width: 100%;
+    max-width: 100%;
+    height: var(--kivo-frame-height);
+    min-height: var(--kivo-frame-height);
+    max-height: var(--kivo-frame-height);
+    gap: 0;
   }
 
   .platform-rail {
     display: none;
-  }
-
-  .platform-frame {
-    gap: 0;
   }
 
   .platform-dashboard-wrap {
@@ -371,7 +392,8 @@
   }
 
   .filter-row select,
-  .filter-row input {
+  .filter-row input,
+  .filter-row .filter-search {
     width: 100%;
     min-width: 0;
   }
@@ -485,25 +507,22 @@
   }
 }
 
-/* 2K / ultrawide — preenche a tela (sem “faixa” estreita no centro) */
+/* 2K / ultrawide — mantém painel flutuante (não estica edge-to-edge) */
 @media (min-width: 2000px) {
   :root {
-    --kivo-frame-max: min(98vw, 2360px);
-    --kivo-frame-height: calc(100dvh - 96px);
-    --kivo-dash-home-max: 100%;
-    --kivo-dash-settings-max: 100%;
-    --kivo-dash-module-max: 100%;
-    --kivo-dash-module-inner-max: 100%;
-    --kivo-bottomnav-max: min(98vw, 1200px);
+    --kivo-frame-width: min(82vw, 1480px);
+    --kivo-frame-height: min(80dvh, 960px);
+    --kivo-frame-max: var(--kivo-frame-width);
+    --kivo-bottomnav-max: min(82vw, 1100px);
   }
 
   .platform-shell {
-    padding-inline: clamp(16px, 1.2vw, 32px);
+    padding-inline: clamp(12px, 1.5vw, 24px);
   }
 
   .platform-frame {
-    width: min(98vw, 2360px);
-    max-width: min(98vw, 2360px);
+    width: var(--kivo-frame-width);
+    max-width: var(--kivo-frame-width);
     height: var(--kivo-frame-height);
     min-height: var(--kivo-frame-height);
     max-height: var(--kivo-frame-height);
@@ -535,15 +554,17 @@
   }
 }
 
-/* QHD comum (2560) — um pouco mais de respiro lateral mínimo */
+/* QHD comum (2560) — leve aumento mantendo margens visíveis */
 @media (min-width: 2400px) {
   :root {
-    --kivo-frame-max: min(96vw, 2440px);
+    --kivo-frame-width: min(84vw, 1560px);
+    --kivo-frame-height: min(82dvh, 1000px);
+    --kivo-frame-max: var(--kivo-frame-width);
   }
 
   .platform-frame {
-    width: min(96vw, 2440px);
-    max-width: min(96vw, 2440px);
+    width: var(--kivo-frame-width);
+    max-width: var(--kivo-frame-width);
     height: var(--kivo-frame-height);
     min-height: var(--kivo-frame-height);
     max-height: var(--kivo-frame-height);

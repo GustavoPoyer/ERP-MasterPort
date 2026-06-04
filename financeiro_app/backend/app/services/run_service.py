@@ -298,7 +298,7 @@ def execute_run(run_id: int) -> None:
         if not run:
             return
 
-        adapter = get_automation(run.automation_key)
+        adapter = get_automation(run.automation_key, db)
         if not adapter:
             run.status = "failed"
             run.logs = f"Automação não registrada: {run.automation_key}"

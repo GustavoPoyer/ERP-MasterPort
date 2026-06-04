@@ -7,13 +7,15 @@ from sqlalchemy import inspect, text
 
 from .config import settings
 from .db import Base, SessionLocal, engine
-from .routers import accounts, auth, automations, runs
+from .routers import accounts, auth, automations, hr, runs, sector_automations, sector_runs
 from .services.account_service import backfill_run_accounts, ensure_default_accounts
 from .services.auth_service import (
     cleanup_expired_password_resets,
     cleanup_expired_sessions,
     ensure_default_users,
 )
+from .services.automation_catalog import ensure_default_sector_automations
+from .services.hr_service import ensure_hr_seed
 from .services.run_service import mark_stale_runs_as_failed, recover_stale_runs_on_startup
 
 if sys.platform.startswith("win"):
@@ -74,6 +76,8 @@ def startup() -> None:
         ensure_default_users(db)
         ensure_default_accounts(db)
         backfill_run_accounts(db)
+        ensure_hr_seed(db)
+        ensure_default_sector_automations(db, settings.automation_workspace)
     finally:
         db.close()
     if settings.recover_interrupted_runs:
@@ -91,3 +95,6 @@ app.include_router(automations.router)
 app.include_router(accounts.router)
 app.include_router(runs.router)
 app.include_router(auth.router)
+app.include_router(hr.router)
+app.include_router(sector_automations.router)
+app.include_router(sector_runs.router)

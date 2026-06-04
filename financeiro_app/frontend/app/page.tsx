@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { KivoAssistant } from "../components/KivoAssistant";
 import { KivoRobot } from "../components/KivoRobot";
+import { OperacoesPanel } from "../components/OperacoesPanel";
+import { RhPanel, RH_VIEW_LABELS, type RhView } from "../components/RhPanel";
 
 type AutomationInfo = {
   key: string;
@@ -165,7 +167,7 @@ function platformPageTitle(view: PlatformView): string {
   if (view === "configuracoes") return "Configurações";
   if (view === "financeiro") return "Setor Financeiro";
   if (view === "pedro") return "Setor Pedro";
-  if (view === "rh") return "Setor RH";
+  if (view === "rh") return "RH";
   return "Setor de Operações";
 }
 
@@ -173,6 +175,89 @@ function platformPageSubtitle(view: PlatformView): string {
   if (view === "inicio") return "Visão geral da plataforma KIVO";
   if (view === "configuracoes") return "Conta, segurança e preferências do ambiente";
   return SECTOR_MENU.find((s) => s.key === view)?.subtitle ?? "";
+}
+
+const ANALYSIS_VIEW_LABELS: Record<"planilha" | "matches" | "log", string> = {
+  planilha: "Status consolidado",
+  matches: "Conciliações",
+  log: "Log técnico",
+};
+
+function bankLabel(bank: BankKey): string {
+  return bank === "bb" ? "Banco do Brasil" : "Itaú / SIGRA";
+}
+
+type PageHeading = { title: string; subtitle: string; tag: string };
+
+function resolvePlatformHeading(
+  activeView: PlatformView,
+  analysisView: "planilha" | "matches" | "log",
+  bankView: BankKey,
+  operationsView: OperationsView,
+  rhView: RhView,
+): PageHeading {
+  if (activeView === "inicio") {
+    return { title: "Início", subtitle: platformPageSubtitle("inicio"), tag: "Plataforma" };
+  }
+  if (activeView === "configuracoes") {
+    return { title: "Configurações", subtitle: platformPageSubtitle("configuracoes"), tag: "Sistema" };
+  }
+  if (activeView === "financeiro") {
+    return {
+      title: "Financeiro",
+      subtitle: `${ANALYSIS_VIEW_LABELS[analysisView]} · ${bankLabel(bankView)}`,
+      tag: "Módulo ativo",
+    };
+  }
+  if (activeView === "operacoes") {
+    const flow = operationsView === "importacao" ? "Importação" : "Exportação";
+    return { title: "Operações", subtitle: `Comex · ${flow}`, tag: "Módulo ativo" };
+  }
+  if (activeView === "rh") {
+    return {
+      title: "Recursos Humanos",
+      subtitle: RH_VIEW_LABELS[rhView],
+      tag: "Módulo ativo",
+    };
+  }
+  const sector = SECTOR_MENU.find((s) => s.key === activeView);
+  return {
+    title: sector?.label ?? platformPageTitle(activeView),
+    subtitle: sector?.subtitle ?? "",
+    tag: "Em breve",
+  };
+}
+
+function resolveDocumentTitle(
+  activeView: PlatformView,
+  analysisView: "planilha" | "matches" | "log",
+  bankView: BankKey,
+  operationsView: OperationsView,
+  rhView: RhView,
+): string {
+  if (activeView === "financeiro") {
+    return `${ANALYSIS_VIEW_LABELS[analysisView]} — Financeiro — KIVO`;
+  }
+  if (activeView === "operacoes") {
+    const flow = operationsView === "importacao" ? "Importação" : "Exportação";
+    return `${flow} — Operações — KIVO`;
+  }
+  if (activeView === "rh") {
+    return `${RH_VIEW_LABELS[rhView]} — RH — KIVO`;
+  }
+  return `${platformPageTitle(activeView)} — KIVO`;
+}
+
+function resolveGuestDocumentTitle(
+  guestView: "landing" | "auth" | "forgot" | "reset",
+  authMode: "login" | "register",
+): string {
+  if (guestView === "auth") {
+    return authMode === "register" ? "Criar conta — KIVO" : "Entrar — KIVO";
+  }
+  if (guestView === "forgot") return "Recuperar acesso — KIVO";
+  if (guestView === "reset") return "Nova senha — KIVO";
+  return "KIVO — ERP operacional";
 }
 
 function sectorLabel(key: string): string {
@@ -419,6 +504,35 @@ function AuthPasswordField({
   );
 }
 
+function FilterSearchInput({
+  placeholder,
+  value,
+  onChange,
+}: {
+  placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="filter-search">
+      <Image
+        src="/brand/kivo-logo-redonda.png"
+        alt=""
+        width={28}
+        height={28}
+        className="filter-search-logo"
+        aria-hidden
+      />
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [authReady, setAuthReady] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -459,6 +573,7 @@ export default function HomePage() {
   const [hideLandingTopbar, setHideLandingTopbar] = useState(false);
   const [activeView, setActiveView] = useState<PlatformView>("inicio");
   const [operationsView, setOperationsView] = useState<OperationsView>("importacao");
+  const [rhView, setRhView] = useState<RhView>("visao");
   const [automations, setAutomations] = useState<AutomationInfo[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
@@ -1574,6 +1689,29 @@ export default function HomePage() {
     document.documentElement.setAttribute("data-kivo-bg", useConfigBg ? "config" : "degrade");
   }, [authToken, activeView]);
 
+  const pageHeading = useMemo(
+    () => resolvePlatformHeading(activeView, analysisView, bankView, operationsView, rhView),
+    [activeView, analysisView, bankView, operationsView, rhView],
+  );
+
+  useEffect(() => {
+    if (!authToken || !currentUser) {
+      document.title = resolveGuestDocumentTitle(guestView, authMode);
+      return;
+    }
+    document.title = resolveDocumentTitle(activeView, analysisView, bankView, operationsView, rhView);
+  }, [
+    authToken,
+    currentUser,
+    guestView,
+    authMode,
+    activeView,
+    analysisView,
+    bankView,
+    operationsView,
+    rhView,
+  ]);
+
   useEffect(() => {
     let lastY = window.scrollY;
     const minY = 80;
@@ -2050,7 +2188,13 @@ export default function HomePage() {
             onClick={() => setActiveView("inicio")}
             title="KIVO — Início"
           >
-            <Image src="/brand/kivo-logotipo.png" alt="KIVO" width={64} height={64} className="platform-rail-logo" />
+            <Image
+              src="/brand/kivo-logotipo.png"
+              alt="KIVO"
+              width={64}
+              height={18}
+              className="platform-rail-logo"
+            />
           </button>
           <nav className="platform-rail-nav">
             <button
@@ -2109,20 +2253,18 @@ export default function HomePage() {
                     ? " platform-dashboard--centered platform-dashboard--home"
                     : activeView === "operacoes"
                       ? " platform-dashboard--centered platform-dashboard--operacoes"
-                      : " platform-dashboard--centered platform-dashboard--module"
+                      : activeView === "rh"
+                        ? " platform-dashboard--centered platform-dashboard--rh"
+                        : " platform-dashboard--centered platform-dashboard--module"
             }`}
           >
-            {activeView !== "inicio" && (
-              <header className="platform-page-header platform-page-header--animate">
-                <div>
-                  <h1 className="platform-title">{platformPageTitle(activeView)}</h1>
-                  <p className="platform-subtitle">{platformPageSubtitle(activeView)}</p>
-                </div>
-                <span className="platform-tag">
-                  {activeView === "configuracoes" ? "Sistema" : "Módulo ativo"}
-                </span>
-              </header>
-            )}
+            <header className="platform-page-header platform-page-header--animate">
+              <div>
+                <h1 className="platform-title">{pageHeading.title}</h1>
+                <p className="platform-subtitle">{pageHeading.subtitle}</p>
+              </div>
+              <span className="platform-tag">{pageHeading.tag}</span>
+            </header>
 
             <div key={activeView} className={`platform-view-pane platform-view-pane--${activeView}`}>
         {activeView === "inicio" ? (
@@ -2512,64 +2654,36 @@ export default function HomePage() {
           </section>
         ) : activeView === "operacoes" ? (
           <section className="platform-operacoes" aria-label="Painel de operações">
-            <header className="platform-operacoes-head">
-              <h2>Painel de Operações</h2>
-              <p className="subtitle">
-                Escolha o fluxo de Comércio Exterior que deseja operar neste módulo.
-              </p>
-            </header>
-
-            <div className="platform-operacoes-flows" role="tablist" aria-label="Fluxos de comércio exterior">
+            <div className="platform-operacoes-flows platform-operacoes-flows--compact" role="tablist" aria-label="Fluxos de comércio exterior">
               <button
                 type="button"
                 role="tab"
                 aria-selected={operationsView === "importacao"}
-                className={`platform-operacoes-flow platform-operacoes-flow--importacao ${
-                  operationsView === "importacao" ? "active" : ""
-                }`}
+                className={`platform-operacoes-flow-tab ${operationsView === "importacao" ? "active" : ""}`}
                 onClick={() => setOperationsView("importacao")}
               >
-                <span className="platform-operacoes-flow-icon" aria-hidden="true">
-                  IN
-                </span>
-                <span className="platform-operacoes-flow-body">
-                  <strong>Importação</strong>
-                  <span>Compras internacionais, desembaraço aduaneiro e nacionalização</span>
-                </span>
+                Importação
               </button>
               <button
                 type="button"
                 role="tab"
                 aria-selected={operationsView === "exportacao"}
-                className={`platform-operacoes-flow platform-operacoes-flow--exportacao ${
-                  operationsView === "exportacao" ? "active" : ""
-                }`}
+                className={`platform-operacoes-flow-tab ${operationsView === "exportacao" ? "active" : ""}`}
                 onClick={() => setOperationsView("exportacao")}
               >
-                <span className="platform-operacoes-flow-icon" aria-hidden="true">
-                  EX
-                </span>
-                <span className="platform-operacoes-flow-body">
-                  <strong>Exportação</strong>
-                  <span>Embarques, documentação, compliance e fechamento cambial</span>
-                </span>
+                Exportação
               </button>
             </div>
 
-            <div className="platform-operacoes-detail" role="tabpanel">
-              {operationsView === "importacao" ? (
-                <p className="info-note">
-                  Fluxo de <b>Importação</b> selecionado. Aqui você pode acompanhar processos de compras internacionais,
-                  desembaraço aduaneiro e nacionalização.
-                </p>
-              ) : (
-                <p className="info-note">
-                  Fluxo de <b>Exportação</b> selecionado. Aqui você pode acompanhar embarques internacionais, documentação,
-                  compliance e fechamento cambial.
-                </p>
-              )}
-            </div>
+            <OperacoesPanel
+              apiFetch={apiFetch}
+              operationsView={operationsView}
+              username={currentUser.username}
+              isAdmin={currentUser.role === "admin"}
+            />
           </section>
+        ) : activeView === "rh" ? (
+          <RhPanel apiFetch={apiFetch} onViewChange={setRhView} />
         ) : activeView !== "financeiro" ? (
           <section className="panel platform-sector-empty">
             <h2>{SECTOR_MENU.find((item) => item.key === activeView)?.label} em breve</h2>
@@ -2980,8 +3094,7 @@ export default function HomePage() {
                     <option value="ref_sigra">Ref. Sigra</option>
                     <option value="status">Status</option>
                   </select>
-                  <input
-                    type="text"
+                  <FilterSearchInput
                     placeholder={
                       filterField === "data"
                         ? "Digite a data (ex.: 08/05/2026)"
@@ -2996,7 +3109,7 @@ export default function HomePage() {
                                 : "Digite para filtrar em todas as colunas"
                     }
                     value={filterValue}
-                    onChange={(e) => setFilterValue(e.target.value)}
+                    onChange={setFilterValue}
                   />
                 </div>
                 <p className="subtitle" style={{ marginBottom: 8 }}>
@@ -3080,11 +3193,10 @@ export default function HomePage() {
                     <option value="descricao">Categoria / Cliente</option>
                     <option value="ref_sigra">Ref. Sigra</option>
                   </select>
-                  <input
-                    type="text"
+                  <FilterSearchInput
                     placeholder="Filtrar conciliações…"
                     value={filterValue}
-                    onChange={(e) => setFilterValue(e.target.value)}
+                    onChange={setFilterValue}
                   />
                 </div>
                 <p className="subtitle" style={{ marginBottom: 8 }}>

@@ -127,3 +127,77 @@ class AppPasswordReset(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SectorAutomation(Base):
+    __tablename__ = "sector_automations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    sector: Mapped[str] = mapped_column(String(40), index=True)
+    flow: Mapped[str] = mapped_column(String(40), index=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    script_path: Mapped[str] = mapped_column(String(500))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+    created_by: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
+class HrEmployee(Base):
+    __tablename__ = "hr_employees"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(160))
+    job_title: Mapped[str] = mapped_column(String(120), default="")
+    department: Mapped[str] = mapped_column(String(80), default="")
+    email: Mapped[str] = mapped_column(String(180), default="")
+    phone: Mapped[str] = mapped_column(String(40), default="")
+    hire_date: Mapped[str] = mapped_column(String(10), default="")
+    birth_date: Mapped[str] = mapped_column(String(10), default="")
+    status: Mapped[str] = mapped_column(String(30), default="ativo", index=True)
+    manager_name: Mapped[str] = mapped_column(String(160), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
+class HrLeaveRequest(Base):
+    __tablename__ = "hr_leave_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    employee_id: Mapped[int] = mapped_column(Integer, index=True)
+    request_type: Mapped[str] = mapped_column(String(40), index=True)
+    start_date: Mapped[str] = mapped_column(String(10))
+    end_date: Mapped[str] = mapped_column(String(10))
+    reason: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(30), default="pendente", index=True)
+    reviewed_by: Mapped[str] = mapped_column(String(120), default="")
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class HrDocument(Base):
+    __tablename__ = "hr_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    employee_id: Mapped[int] = mapped_column(Integer, index=True)
+    doc_type: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(30), default="pendente", index=True)
+    due_date: Mapped[str] = mapped_column(String(10), default="")
+    notes: Mapped[str] = mapped_column(Text, default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )

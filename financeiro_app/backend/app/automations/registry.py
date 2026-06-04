@@ -1,11 +1,13 @@
 from .base import AutomationAdapter
 from .bb import BBConciliationAutomation
 from .itau_sigra import ItauSigraConciliationAutomation
+from .operacoes_importacao import OperacoesImportacaoAutomation
 
 
 AUTOMATIONS: dict[str, AutomationAdapter] = {
     BBConciliationAutomation.key: BBConciliationAutomation(),
     ItauSigraConciliationAutomation.key: ItauSigraConciliationAutomation(),
+    OperacoesImportacaoAutomation.key: OperacoesImportacaoAutomation(),
 }
 
 AUTOMATION_SLOTS: dict[str, dict[str, list[str]]] = {
@@ -24,8 +26,15 @@ def list_automations() -> list[AutomationAdapter]:
     return list(AUTOMATIONS.values())
 
 
-def get_automation(key: str) -> AutomationAdapter | None:
-    return AUTOMATIONS.get(key)
+def get_automation(key: str, db=None) -> AutomationAdapter | None:
+    static = AUTOMATIONS.get(key)
+    if static:
+        return static
+    if db is not None:
+        from ..services.automation_catalog import resolve_sector_automation
+
+        return resolve_sector_automation(db, key)
+    return None
 
 
 def validate_uploaded_filenames(automation_key: str, filenames: list[str]) -> tuple[bool, str]:
