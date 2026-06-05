@@ -86,6 +86,7 @@ def startup() -> None:
         mark_stale_runs_as_failed()
 
 
+@app.api_route("/", methods=["GET", "HEAD"])
 @app.get("/health")
 def health():
     return {"status": "ok"}
