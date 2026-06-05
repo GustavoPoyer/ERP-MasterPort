@@ -1,0 +1,597 @@
+/* Responsivo KIVO — fluido em 2K, 1080p e mobile */
+
+:root {
+  --kivo-shell-pad-x: clamp(10px, 2vw, 20px);
+  --kivo-shell-pad-y: clamp(10px, 2vh, 20px);
+  /* Painel flutuante centralizado — ~80% × ~78% da viewport (ref. glass) */
+  --kivo-frame-width: min(80vw, 1320px);
+  --kivo-frame-height: min(78dvh, 880px);
+  --kivo-frame-max: var(--kivo-frame-width);
+  --kivo-dash-pad-x: clamp(14px, 2vw, 28px);
+  --kivo-dash-pad-bottom: clamp(56px, 8vh, 72px);
+  --kivo-dash-home-max: clamp(760px, 74vw, 1260px);
+  --kivo-dash-settings-max: clamp(700px, 64vw, 1120px);
+  --kivo-dash-module-max: clamp(640px, 58vw, 1000px);
+  --kivo-bottomnav-max: clamp(720px, 72vw, 1100px);
+}
+
+/* Base fluida (desktop médio/grande) */
+.platform-shell {
+  padding: var(--kivo-shell-pad-y) var(--kivo-shell-pad-x) calc(var(--kivo-shell-pad-y) + 8px);
+  align-items: center;
+  justify-content: center;
+}
+
+.platform-frame {
+  width: var(--kivo-frame-width);
+  max-width: var(--kivo-frame-width);
+  height: var(--kivo-frame-height);
+  min-height: var(--kivo-frame-height);
+  max-height: var(--kivo-frame-height);
+}
+
+.platform-dashboard {
+  padding: clamp(16px, 2vw, 26px) var(--kivo-dash-pad-x) var(--kivo-dash-pad-bottom);
+}
+
+.platform-dashboard-wrap {
+  padding-bottom: clamp(40px, 6vh, 52px);
+}
+
+.platform-bottomnav {
+  width: min(calc(100% - 12px), var(--kivo-bottomnav-max));
+}
+
+.platform-page-header {
+  gap: 12px;
+}
+
+.platform-page-header .platform-title {
+  font-size: clamp(1.15rem, 2.2vw, 1.45rem);
+}
+
+.platform-page-header .platform-subtitle {
+  font-size: clamp(0.78rem, 1.6vw, 0.88rem);
+}
+
+.kpi-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+}
+
+.layout-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+}
+
+.doc-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
+.filter-row input {
+  min-width: min(100%, 280px);
+  flex: 1 1 180px;
+}
+
+.tab-row,
+.finance-account-tabs,
+.month-tabs {
+  overflow-x: auto;
+  flex-wrap: nowrap;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 2px;
+}
+
+.finance-account-row {
+  overflow: hidden;
+}
+
+.finance-account-tabs {
+  flex-wrap: nowrap;
+}
+
+.finance-account-tab {
+  flex-shrink: 0;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.table-wrapper table {
+  min-width: 640px;
+}
+
+.control-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.run-toolbar {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.run-toolbar .control-row {
+  width: 100%;
+}
+
+/* Até Full HD / altura de notebook — mais área útil, sem rail duplicada */
+@media (max-width: 1920px), (max-height: 900px) {
+  .platform-rail {
+    display: none !important;
+  }
+
+  .platform-frame {
+    width: var(--kivo-frame-width);
+    max-width: var(--kivo-frame-width);
+  }
+
+  .platform-dashboard {
+    border-radius: clamp(20px, 3vw, 36px);
+    padding-bottom: clamp(52px, 7vh, 64px);
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .layout-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Tablet landscape / janela estreita */
+@media (max-width: 1080px) {
+  .platform-shell {
+    padding: 12px 12px 20px;
+    align-items: center;
+  }
+
+  :root {
+    --kivo-frame-width: min(94vw, 100%);
+    --kivo-frame-height: min(86dvh, calc(100dvh - 80px));
+  }
+
+  .platform-frame {
+    width: var(--kivo-frame-width);
+    max-width: var(--kivo-frame-width);
+    height: var(--kivo-frame-height);
+    min-height: var(--kivo-frame-height);
+    max-height: var(--kivo-frame-height);
+  }
+
+  .platform-dashboard {
+    border-radius: 24px;
+    flex: 1 1 auto;
+    min-height: min(60dvh, calc(100dvh - 120px));
+    max-height: calc(100dvh - 80px);
+  }
+
+  .platform-bottomnav {
+    width: calc(100% - 8px);
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 8px;
+    border-radius: 20px;
+  }
+
+  .platform-bottomnav-pills {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .platform-bottomnav-actions {
+    width: 100%;
+    justify-content: center;
+    margin-top: 4px;
+  }
+
+  .platform-nav-pill {
+    padding: 7px 11px;
+    font-size: 0.7rem;
+  }
+
+  .platform-home-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .platform-home-modules {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-operacoes-flows {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-settings-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hero {
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .hero h1 {
+    font-size: 1.35rem;
+  }
+
+  .doc-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .run-focus-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .kivo-assistant {
+    right: 8px;
+    bottom: clamp(64px, 12vh, 88px);
+    max-width: min(360px, calc(100vw - 16px));
+  }
+}
+
+/* Mobile */
+@media (max-width: 768px) {
+  .lp-shell {
+    padding: 12px 12px 32px;
+  }
+
+  .lp-topbar {
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    gap: 10px;
+    top: 8px;
+  }
+
+  .lp-nav {
+    order: 3;
+    width: 100%;
+    gap: 12px;
+    font-size: 0.82rem;
+  }
+
+  .lp-hero-grid {
+    margin-top: 24px;
+    gap: 20px;
+  }
+
+  .lp-hero-copy h1 {
+    font-size: clamp(1.5rem, 7vw, 2rem);
+  }
+
+  .auth-screen {
+    padding: 64px 14px 24px;
+    align-items: flex-start;
+  }
+
+  .auth-screen-card {
+    max-width: 100%;
+    padding: 0 4px;
+  }
+
+  .auth-screen-back {
+    top: 12px;
+    left: 12px;
+    padding: 6px 12px 6px 8px;
+    font-size: 0.75rem;
+  }
+
+  .platform-shell {
+    padding: 8px 8px 16px;
+    min-height: 100dvh;
+    align-items: stretch;
+  }
+
+  :root {
+    --kivo-frame-width: 100%;
+    --kivo-frame-height: calc(100dvh - 16px);
+  }
+
+  .platform-frame {
+    width: 100%;
+    max-width: 100%;
+    height: var(--kivo-frame-height);
+    min-height: var(--kivo-frame-height);
+    max-height: var(--kivo-frame-height);
+    gap: 0;
+  }
+
+  .platform-rail {
+    display: none;
+  }
+
+  .platform-dashboard-wrap {
+    padding-bottom: 0;
+  }
+
+  .platform-dashboard {
+    border-radius: 18px;
+    padding: 14px 12px 58px;
+    min-height: calc(100dvh - 24px);
+    max-height: none;
+  }
+
+  .platform-page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .platform-page-header .platform-tag {
+    align-self: flex-start;
+  }
+
+  .platform-bottomnav {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    transform: none;
+    width: auto;
+    max-width: none;
+    border-radius: 18px;
+    padding: 8px 6px;
+    z-index: 50;
+  }
+
+  .platform-bottomnav-hint {
+    display: none;
+  }
+
+  .platform-bottomnav-user {
+    display: none;
+  }
+
+  .platform-bottomnav-logout {
+    padding: 7px 10px !important;
+    font-size: 0.7rem !important;
+  }
+
+  .platform-bottomnav-divider {
+    display: none;
+  }
+
+  .platform-nav-pill {
+    padding: 8px 10px;
+    font-size: 0.68rem;
+  }
+
+  .kpi-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .kpi .value {
+    font-size: 1.15rem;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .layout-grid {
+    gap: 12px;
+  }
+
+  .tab-btn,
+  .finance-account-tab {
+    font-size: 0.72rem;
+    padding: 8px 10px;
+  }
+
+  .tab-btn--download {
+    margin-left: 0;
+  }
+
+  .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .filter-row select,
+  .filter-row input,
+  .filter-row .filter-search {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .doc-actions {
+    flex-wrap: wrap;
+  }
+
+  .upload-btn,
+  .btn-primary,
+  .btn-secondary,
+  .platform-settings-approve-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .run-toolbar .control-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .run-toolbar .control-row .btn-primary,
+  .run-toolbar .control-row .btn-secondary {
+    width: 100%;
+  }
+
+  .platform-settings-grid,
+  .platform-dashboard--settings .platform-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-dashboard--settings,
+  .platform-dashboard--home,
+  .platform-dashboard--module,
+  .platform-dashboard--operacoes {
+    max-width: 100%;
+    border-radius: 20px;
+  }
+
+  .platform-settings-add-account-row {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-settings-account-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .platform-settings-account-item .btn-secondary,
+  .platform-settings-account-item .platform-settings-approve-btn {
+    width: 100%;
+  }
+
+  .platform-settings-accounts-scroll {
+    max-height: 220px;
+  }
+
+  .platform-settings-security-form {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-settings-pending-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .platform-settings-pending-sector {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .kivo-assistant {
+    left: 8px;
+    right: 8px;
+    bottom: 72px;
+    width: auto;
+    max-width: none;
+  }
+
+  .kivo-assistant-panel {
+    max-height: min(50dvh, 360px);
+  }
+}
+
+/* Celular pequeno */
+@media (max-width: 480px) {
+  .kpi-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .run-focus-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-bottomnav-pills {
+    gap: 2px;
+  }
+
+  .platform-nav-pill {
+    padding: 7px 8px;
+    font-size: 0.62rem;
+  }
+
+  .platform-settings-grid > article {
+    padding: 12px;
+  }
+
+  .table-wrapper table {
+    min-width: 520px;
+    font-size: 0.78rem;
+  }
+}
+
+/* 2K / ultrawide — mantém painel flutuante (não estica edge-to-edge) */
+@media (min-width: 2000px) {
+  :root {
+    --kivo-frame-width: min(82vw, 1480px);
+    --kivo-frame-height: min(80dvh, 960px);
+    --kivo-frame-max: var(--kivo-frame-width);
+    --kivo-bottomnav-max: min(82vw, 1100px);
+  }
+
+  .platform-shell {
+    padding-inline: clamp(12px, 1.5vw, 24px);
+  }
+
+  .platform-frame {
+    width: var(--kivo-frame-width);
+    max-width: var(--kivo-frame-width);
+    height: var(--kivo-frame-height);
+    min-height: var(--kivo-frame-height);
+    max-height: var(--kivo-frame-height);
+  }
+
+  .platform-dashboard--operacoes > .platform-view-pane--operacoes {
+    justify-content: flex-start !important;
+  }
+
+  .platform-dashboard--module .platform-sector-empty {
+    max-width: none;
+    padding: 28px 32px;
+  }
+
+  .layout-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  }
+
+  .doc-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .platform-dashboard--home .platform-home-modules {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .platform-dashboard--home > .platform-view-pane--inicio {
+    justify-content: flex-start;
+  }
+}
+
+/* QHD comum (2560) — leve aumento mantendo margens visíveis */
+@media (min-width: 2400px) {
+  :root {
+    --kivo-frame-width: min(84vw, 1560px);
+    --kivo-frame-height: min(82dvh, 1000px);
+    --kivo-frame-max: var(--kivo-frame-width);
+  }
+
+  .platform-frame {
+    width: var(--kivo-frame-width);
+    max-width: var(--kivo-frame-width);
+    height: var(--kivo-frame-height);
+    min-height: var(--kivo-frame-height);
+    max-height: var(--kivo-frame-height);
+  }
+}
+
+/* Home — módulos em 3 colunas quando couber */
+@media (min-width: 900px) {
+  .platform-dashboard--home .platform-home-modules {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .platform-dashboard--home .platform-home-module--financeiro {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (min-width: 1020px) {
+  .platform-dashboard--home .platform-home-modules {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-row,
+  .finance-account-tabs,
+  .platform-bottomnav-pills {
+    scroll-behavior: auto;
+  }
+}

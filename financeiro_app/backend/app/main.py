@@ -7,12 +7,14 @@ from sqlalchemy import inspect, text
 
 from .config import settings
 from .db import Base, SessionLocal, engine
-from .routers import auth, automations, rh, runs
+from .routers import accounts, auth, automations, rh, runs, sector_automations, sector_runs
+from .services.account_service import backfill_run_accounts, ensure_default_accounts
 from .services.auth_service import (
     cleanup_expired_password_resets,
     cleanup_expired_sessions,
     ensure_default_users,
 )
+from .services.automation_catalog import ensure_default_sector_automations
 from .services.rh_service import ensure_rh_seed_data
 from .services.run_service import mark_stale_runs_as_failed, recover_stale_runs_on_startup
 
@@ -63,6 +65,12 @@ def ensure_schema_compatibility() -> None:
                     text("ALTER TABLE rh_calendar_events ADD COLUMN color VARCHAR(20) NOT NULL DEFAULT '#d9f99d'")
                 )
 
+        if "reconciliation_runs" in table_names:
+            run_columns = {col["name"] for col in inspector.get_columns("reconciliation_runs")}
+            if "account_id" not in run_columns:
+                conn.execute(text("ALTER TABLE reconciliation_runs ADD COLUMN account_id INTEGER"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_reconciliation_runs_account_id ON reconciliation_runs (account_id)"))
+
 
 @app.on_event("startup")
 def startup() -> None:
@@ -73,7 +81,10 @@ def startup() -> None:
         cleanup_expired_sessions(db)
         cleanup_expired_password_resets(db)
         ensure_default_users(db)
+        ensure_default_accounts(db)
+        backfill_run_accounts(db)
         ensure_rh_seed_data(db)
+        ensure_default_sector_automations(db, settings.automation_workspace)
     finally:
         db.close()
     if settings.recover_interrupted_runs:
@@ -82,12 +93,16 @@ def startup() -> None:
         mark_stale_runs_as_failed()
 
 
+@app.api_route("/", methods=["GET", "HEAD"])
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
 
 app.include_router(automations.router)
+app.include_router(accounts.router)
 app.include_router(runs.router)
 app.include_router(auth.router)
 app.include_router(rh.router)
+app.include_router(sector_automations.router)
+app.include_router(sector_runs.router)

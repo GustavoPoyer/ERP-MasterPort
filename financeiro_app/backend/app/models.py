@@ -6,11 +6,24 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .db import Base
 
 
+class FinanceAccount(Base):
+    __tablename__ = "finance_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    bank: Mapped[str] = mapped_column(String(40), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    slug: Mapped[str] = mapped_column(String(80), index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class ReconciliationRun(Base):
     __tablename__ = "reconciliation_runs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     automation_key: Mapped[str] = mapped_column(String(100), index=True)
+    account_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
     status: Mapped[str] = mapped_column(String(30), index=True, default="queued")
     triggered_by: Mapped[str] = mapped_column(String(120), default="financeiro")
     parameters_json: Mapped[str] = mapped_column(Text, default="{}")
@@ -185,3 +198,25 @@ class RhCalendarEvent(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     color: Mapped[str] = mapped_column(String(20), default="#d9f99d")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SectorAutomation(Base):
+    __tablename__ = "sector_automations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    sector: Mapped[str] = mapped_column(String(40), index=True)
+    flow: Mapped[str] = mapped_column(String(40), index=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    description: Mapped[str] = mapped_column(Text, default="")
+    script_path: Mapped[str] = mapped_column(String(500))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+    created_by: Mapped[str] = mapped_column(String(120), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+

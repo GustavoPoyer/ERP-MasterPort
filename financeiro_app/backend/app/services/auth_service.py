@@ -208,6 +208,12 @@ def ensure_default_users(db: Session) -> None:
             "financeiro",
             "operator",
         ),
+        (
+            os.getenv("FIN_RH_USER", "rh"),
+            os.getenv("FIN_RH_PASSWORD", "rh123"),
+            "rh",
+            "operator",
+        ),
     ]
     for username, password, sector, role in defaults:
         existing = db.scalar(select(AppUser).where(AppUser.username == username).limit(1))

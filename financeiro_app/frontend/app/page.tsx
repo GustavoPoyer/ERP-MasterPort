@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { KivoAssistant } from "../components/KivoAssistant";
 import { KivoRobot } from "../components/KivoRobot";
-import { RhModule } from "../components/RhModule";
+import { OperacoesPanel } from "../components/OperacoesPanel";
+import { RhModule, RH_VIEW_LABELS, type RhView } from "../components/RhModule";
 
 type AutomationInfo = {
   key: string;
@@ -12,9 +13,22 @@ type AutomationInfo = {
   description: string;
 };
 
+type BankKey = "bb" | "itau_sigra";
+
+type FinanceAccount = {
+  id: number;
+  bank: BankKey;
+  name: string;
+  slug: string;
+  sort_order: number;
+  is_active: number;
+};
+
 type Run = {
   id: number;
   automation_key: string;
+  account_id?: number | null;
+  account_name?: string | null;
   status: string;
   triggered_by: string;
   parameters_json: string;
@@ -172,7 +186,7 @@ function platformPageTitle(view: PlatformView): string {
   if (view === "configuracoes") return "Configurações";
   if (view === "financeiro") return "Setor Financeiro";
   if (view === "pedro") return "Setor Pedro";
-  if (view === "rh") return "Setor RH";
+  if (view === "rh") return "RH";
   return "Setor de Operações";
 }
 
@@ -180,6 +194,89 @@ function platformPageSubtitle(view: PlatformView): string {
   if (view === "inicio") return "Visão geral da plataforma KIVO";
   if (view === "configuracoes") return "Conta, segurança e preferências do ambiente";
   return SECTOR_MENU.find((s) => s.key === view)?.subtitle ?? "";
+}
+
+const ANALYSIS_VIEW_LABELS: Record<"planilha" | "matches" | "log", string> = {
+  planilha: "Status consolidado",
+  matches: "Conciliações",
+  log: "Log técnico",
+};
+
+function bankLabel(bank: BankKey): string {
+  return bank === "bb" ? "Banco do Brasil" : "Itaú / SIGRA";
+}
+
+type PageHeading = { title: string; subtitle: string; tag: string };
+
+function resolvePlatformHeading(
+  activeView: PlatformView,
+  analysisView: "planilha" | "matches" | "log",
+  bankView: BankKey,
+  operationsView: OperationsView,
+  rhView: RhView,
+): PageHeading {
+  if (activeView === "inicio") {
+    return { title: "Início", subtitle: platformPageSubtitle("inicio"), tag: "Plataforma" };
+  }
+  if (activeView === "configuracoes") {
+    return { title: "Configurações", subtitle: platformPageSubtitle("configuracoes"), tag: "Sistema" };
+  }
+  if (activeView === "financeiro") {
+    return {
+      title: "Financeiro",
+      subtitle: `${ANALYSIS_VIEW_LABELS[analysisView]} · ${bankLabel(bankView)}`,
+      tag: "Módulo ativo",
+    };
+  }
+  if (activeView === "operacoes") {
+    const flow = operationsView === "importacao" ? "Importação" : "Exportação";
+    return { title: "Operações", subtitle: `Comex · ${flow}`, tag: "Módulo ativo" };
+  }
+  if (activeView === "rh") {
+    return {
+      title: "Recursos Humanos",
+      subtitle: RH_VIEW_LABELS[rhView],
+      tag: "Módulo ativo",
+    };
+  }
+  const sector = SECTOR_MENU.find((s) => s.key === activeView);
+  return {
+    title: sector?.label ?? platformPageTitle(activeView),
+    subtitle: sector?.subtitle ?? "",
+    tag: "Em breve",
+  };
+}
+
+function resolveDocumentTitle(
+  activeView: PlatformView,
+  analysisView: "planilha" | "matches" | "log",
+  bankView: BankKey,
+  operationsView: OperationsView,
+  rhView: RhView,
+): string {
+  if (activeView === "financeiro") {
+    return `${ANALYSIS_VIEW_LABELS[analysisView]} — Financeiro — KIVO`;
+  }
+  if (activeView === "operacoes") {
+    const flow = operationsView === "importacao" ? "Importação" : "Exportação";
+    return `${flow} — Operações — KIVO`;
+  }
+  if (activeView === "rh") {
+    return `${RH_VIEW_LABELS[rhView]} — RH — KIVO`;
+  }
+  return `${platformPageTitle(activeView)} — KIVO`;
+}
+
+function resolveGuestDocumentTitle(
+  guestView: "landing" | "auth" | "forgot" | "reset",
+  authMode: "login" | "register",
+): string {
+  if (guestView === "auth") {
+    return authMode === "register" ? "Criar conta — KIVO" : "Entrar — KIVO";
+  }
+  if (guestView === "forgot") return "Recuperar acesso — KIVO";
+  if (guestView === "reset") return "Nova senha — KIVO";
+  return "KIVO — ERP operacional";
 }
 
 function sectorLabel(key: string): string {
@@ -426,6 +523,35 @@ function AuthPasswordField({
   );
 }
 
+function FilterSearchInput({
+  placeholder,
+  value,
+  onChange,
+}: {
+  placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="filter-search">
+      <Image
+        src="/brand/kivo-logo-redonda.png"
+        alt=""
+        width={28}
+        height={28}
+        className="filter-search-logo"
+        aria-hidden
+      />
+      <input
+        type="text"
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  );
+}
+
 export default function HomePage() {
   const [authReady, setAuthReady] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
@@ -466,10 +592,18 @@ export default function HomePage() {
   const [hideLandingTopbar, setHideLandingTopbar] = useState(false);
   const [activeView, setActiveView] = useState<PlatformView>("inicio");
   const [operationsView, setOperationsView] = useState<OperationsView>("importacao");
+  const [rhView, setRhView] = useState<RhView>("overview");
   const [automations, setAutomations] = useState<AutomationInfo[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
-  const [bankView, setBankView] = useState<"bb" | "itau_sigra">("bb");
+  const [bankView, setBankView] = useState<BankKey>("bb");
+  const [financeAccounts, setFinanceAccounts] = useState<FinanceAccount[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
+  const [newAccountBank, setNewAccountBank] = useState<BankKey>("bb");
+  const [newAccountName, setNewAccountName] = useState("");
+  const [accountsBusy, setAccountsBusy] = useState(false);
+  const [accountsError, setAccountsError] = useState("");
+  const [accountsMessage, setAccountsMessage] = useState("");
   const [analysisView, setAnalysisView] = useState<"planilha" | "matches" | "log">("planilha");
   const [matchSort, setMatchSort] = useState<{ field: "data" | "valor"; direction: "desc" | "asc" }>({
     field: "data",
@@ -495,12 +629,44 @@ export default function HomePage() {
   const [dataset, setDataset] = useState<RunDataset | null>(null);
   const [datasetError, setDatasetError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [runsRefreshing, setRunsRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  const filteredRuns = useMemo(
-    () => runs.filter((r) => r.automation_key === bankView),
-    [runs, bankView],
+  const accountsForBank = useMemo(
+    () =>
+      financeAccounts
+        .filter((account) => account.bank === bankView && Number(account.is_active) === 1)
+        .sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)),
+    [financeAccounts, bankView],
   );
+
+  const inactiveAccountsForBank = useMemo(
+    () => financeAccounts.filter((account) => account.bank === bankView && Number(account.is_active) !== 1),
+    [financeAccounts, bankView],
+  );
+
+  const selectedAccount = useMemo(
+    () => accountsForBank.find((account) => account.id === selectedAccountId) ?? null,
+    [accountsForBank, selectedAccountId],
+  );
+
+  const filteredRuns = useMemo(() => {
+    return runs.filter((run) => {
+      if (run.automation_key !== bankView) return false;
+      if (!selectedAccountId) return true;
+      return run.account_id === selectedAccountId;
+    });
+  }, [runs, bankView, selectedAccountId]);
+
+  const runCountByAccountId = useMemo(() => {
+    const map: Record<number, number> = {};
+    runs.forEach((run) => {
+      if (run.account_id) {
+        map[run.account_id] = (map[run.account_id] || 0) + 1;
+      }
+    });
+    return map;
+  }, [runs]);
   const selectedRunBase = useMemo(
     () => filteredRuns.find((r) => r.id === selectedRunId) ?? filteredRuns[0],
     [filteredRuns, selectedRunId],
@@ -1112,13 +1278,125 @@ export default function HomePage() {
     setAutomations(data);
   }
 
+  async function loadFinanceAccounts(options?: { includeInactive?: boolean }) {
+    const query = options?.includeInactive ? "?include_inactive=true" : "";
+    const res = await apiFetch(`/accounts${query}`);
+    if (!res.ok) throw new Error("Erro ao carregar contas bancárias.");
+    const data = (await res.json()) as FinanceAccount[];
+    setFinanceAccounts(data);
+  }
+
+  async function refreshRuns() {
+    setRunsRefreshing(true);
+    try {
+      await loadRuns();
+    } finally {
+      setRunsRefreshing(false);
+    }
+  }
+
   async function loadRuns() {
     const res = await apiFetch("/runs");
     if (!res.ok) throw new Error("Erro ao carregar execuções.");
-    const data = await res.json();
+    const data = (await res.json()) as Run[];
     setRuns(data);
-    if (data.length > 0 && !selectedRunId) {
-      setSelectedRunId(data[0].id);
+
+    const visible = data.filter((run) => {
+      if (run.automation_key !== bankView) return false;
+      if (selectedAccountId && run.account_id !== selectedAccountId) return false;
+      return true;
+    });
+    if (visible.length > 0) {
+      setSelectedRunId((current) =>
+        visible.some((run) => run.id === current) ? current : visible[0].id,
+      );
+    } else {
+      setSelectedRunId(null);
+    }
+  }
+
+  async function createFinanceAccount() {
+    const name = newAccountName.trim();
+    if (!name) {
+      setAccountsError("Informe o nome da conta.");
+      return;
+    }
+    setAccountsBusy(true);
+    setAccountsError("");
+    setAccountsMessage("");
+    try {
+      const res = await apiFetch("/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bank: newAccountBank, name }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível criar a conta."));
+      }
+      setNewAccountName("");
+      setAccountsMessage(`Conta "${payload.name}" criada.`);
+      await loadFinanceAccounts({ includeInactive: true });
+      if (payload.bank === bankView) {
+        setSelectedAccountId(payload.id);
+      }
+    } catch (e) {
+      setAccountsError(e instanceof Error ? e.message : "Erro ao criar conta.");
+      await loadFinanceAccounts({ includeInactive: true }).catch(() => null);
+    } finally {
+      setAccountsBusy(false);
+    }
+  }
+
+  async function reactivateFinanceAccount(accountId: number) {
+    const account = financeAccounts.find((item) => item.id === accountId);
+    if (!account) return;
+    setAccountsBusy(true);
+    setAccountsError("");
+    setAccountsMessage("");
+    try {
+      const res = await apiFetch(`/accounts/${accountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: true }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível reativar a conta."));
+      }
+      setAccountsMessage(`Conta "${account.name}" reativada.`);
+      await loadFinanceAccounts({ includeInactive: true });
+    } catch (e) {
+      setAccountsError(e instanceof Error ? e.message : "Erro ao reativar conta.");
+    } finally {
+      setAccountsBusy(false);
+    }
+  }
+
+  async function deactivateFinanceAccount(accountId: number) {
+    const account = financeAccounts.find((item) => item.id === accountId);
+    if (!account) return;
+    const ok = window.confirm(`Desativar a conta "${account.name}"?`);
+    if (!ok) return;
+    setAccountsBusy(true);
+    setAccountsError("");
+    setAccountsMessage("");
+    try {
+      const res = await apiFetch(`/accounts/${accountId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: false }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível desativar a conta."));
+      }
+      setAccountsMessage(`Conta "${account.name}" desativada.`);
+      await loadFinanceAccounts({ includeInactive: true });
+    } catch (e) {
+      setAccountsError(e instanceof Error ? e.message : "Erro ao desativar conta.");
+    } finally {
+      setAccountsBusy(false);
     }
   }
 
@@ -1150,6 +1428,10 @@ export default function HomePage() {
   }
 
   async function triggerRun() {
+    if (!selectedAccountId) {
+      setError("Selecione a conta bancária da rodada.");
+      return;
+    }
     if (flattenedFiles.length === 0) {
       setError("Adicione os documentos da rodada antes de executar.");
       return;
@@ -1165,6 +1447,7 @@ export default function HomePage() {
     try {
       const formData = new FormData();
       formData.append("automation_key", bankView);
+      formData.append("account_id", String(selectedAccountId));
       formData.append("triggered_by", currentUser?.username || "financeiro");
       formData.append("parameters_json", "{}");
       flattenedFiles.forEach((entry) => {
@@ -1230,23 +1513,31 @@ export default function HomePage() {
   }
 
   async function clearAllRuns() {
+    const accountLabel = selectedAccount?.name || "esta conta";
     const bankLabel = bankView === "bb" ? "Banco do Brasil" : "Itaú / SIGRA";
-    const ok = window.confirm(`Tem certeza que deseja apagar o histórico de execuções de ${bankLabel}?`);
+    const ok = window.confirm(
+      `Apagar o histórico de execuções de ${accountLabel} (${bankLabel})?`,
+    );
     if (!ok) return;
-    const targetRuns = runs.filter((run) => run.automation_key === bankView);
-    if (targetRuns.length === 0) {
-      setError(`Não há execuções de ${bankLabel} para limpar.`);
+    if (filteredRuns.length === 0) {
+      setError(`Não há execuções para ${accountLabel}.`);
+      return;
+    }
+    if (!selectedAccountId) {
+      setError("Selecione uma conta.");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      for (const run of targetRuns) {
-        const res = await apiFetch(`/runs/${run.id}`, { method: "DELETE" });
-        if (!res.ok) {
-          const payload = await res.json().catch(() => ({}));
-          throw new Error(payload?.detail || `Falha ao limpar histórico de ${bankLabel}.`);
-        }
+      const params = new URLSearchParams({
+        automation_key: bankView,
+        account_id: String(selectedAccountId),
+      });
+      const res = await apiFetch(`/runs?${params.toString()}`, { method: "DELETE" });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(parseApiErrorDetail(payload?.detail, `Falha ao limpar histórico de ${accountLabel}.`));
       }
       setSelectedRunId(null);
       await loadRuns();
@@ -1295,7 +1586,25 @@ export default function HomePage() {
   useEffect(() => {
     if (!authToken) return;
     loadAutomations().catch(() => setError("Erro ao carregar automações."));
+    loadFinanceAccounts().catch(() => {
+      setError("Erro ao carregar contas bancárias. Reinicie o backend e atualize a página.");
+    });
   }, [authToken]);
+
+  useEffect(() => {
+    if (!authToken || activeView !== "financeiro") return;
+    loadFinanceAccounts().catch(() => null);
+  }, [authToken, activeView]);
+
+  useEffect(() => {
+    if (!accountsForBank.length) {
+      setSelectedAccountId(null);
+      return;
+    }
+    if (!selectedAccountId || !accountsForBank.some((account) => account.id === selectedAccountId)) {
+      setSelectedAccountId(accountsForBank[0].id);
+    }
+  }, [accountsForBank, selectedAccountId]);
 
   useEffect(() => {
     if (!authToken) return;
@@ -1307,7 +1616,7 @@ export default function HomePage() {
       isSelectedRunActive ? FAST_POLL_MS : DEFAULT_POLL_MS,
     );
     return () => clearInterval(timer);
-  }, [isSelectedRunActive]);
+  }, [authToken, bankView, selectedAccountId, isSelectedRunActive]);
 
   useEffect(() => {
     if (!authToken) return;
@@ -1382,6 +1691,7 @@ export default function HomePage() {
     if (currentUser?.role === "admin") {
       loadPendingUsers().catch(() => null);
       loadPendingCount().catch(() => null);
+      loadFinanceAccounts({ includeInactive: true }).catch(() => null);
     }
   }, [activeView, currentUser?.role]);
 
@@ -1397,6 +1707,29 @@ export default function HomePage() {
     const useConfigBg = Boolean(authToken) && activeView === "configuracoes";
     document.documentElement.setAttribute("data-kivo-bg", useConfigBg ? "config" : "degrade");
   }, [authToken, activeView]);
+
+  const pageHeading = useMemo(
+    () => resolvePlatformHeading(activeView, analysisView, bankView, operationsView, rhView),
+    [activeView, analysisView, bankView, operationsView, rhView],
+  );
+
+  useEffect(() => {
+    if (!authToken || !currentUser) {
+      document.title = resolveGuestDocumentTitle(guestView, authMode);
+      return;
+    }
+    document.title = resolveDocumentTitle(activeView, analysisView, bankView, operationsView, rhView);
+  }, [
+    authToken,
+    currentUser,
+    guestView,
+    authMode,
+    activeView,
+    analysisView,
+    bankView,
+    operationsView,
+    rhView,
+  ]);
 
   useEffect(() => {
     let lastY = window.scrollY;
@@ -1867,7 +2200,13 @@ export default function HomePage() {
             onClick={() => setActiveView("inicio")}
             title="KIVO — Início"
           >
-            <Image src="/brand/kivo-logotipo.png" alt="KIVO" width={64} height={64} className="platform-rail-logo" />
+            <Image
+              src="/brand/kivo-logotipo.png"
+              alt="KIVO"
+              width={64}
+              height={18}
+              className="platform-rail-logo"
+            />
           </button>
           <nav className="platform-rail-nav">
             <button
@@ -1920,22 +2259,24 @@ export default function HomePage() {
             className={`platform-dashboard${
               activeView === "financeiro"
                 ? " platform-dashboard--financeiro"
-                : activeView === "rh"
-                  ? " platform-dashboard--rh"
-                  : " platform-dashboard--centered"
+                : activeView === "configuracoes"
+                  ? " platform-dashboard--centered platform-dashboard--settings"
+                  : activeView === "inicio"
+                    ? " platform-dashboard--centered platform-dashboard--home"
+                    : activeView === "operacoes"
+                      ? " platform-dashboard--centered platform-dashboard--operacoes"
+                      : activeView === "rh"
+                        ? " platform-dashboard--rh"
+                        : " platform-dashboard--centered platform-dashboard--module"
             }`}
           >
-            {activeView !== "inicio" && (
-              <header className="platform-page-header platform-page-header--animate">
-                <div>
-                  <h1 className="platform-title">{platformPageTitle(activeView)}</h1>
-                  <p className="platform-subtitle">{platformPageSubtitle(activeView)}</p>
-                </div>
-                <span className="platform-tag">
-                  {activeView === "configuracoes" ? "Sistema" : "Módulo ativo"}
-                </span>
-              </header>
-            )}
+            <header className="platform-page-header platform-page-header--animate">
+              <div>
+                <h1 className="platform-title">{pageHeading.title}</h1>
+                <p className="platform-subtitle">{pageHeading.subtitle}</p>
+              </div>
+              <span className="platform-tag">{pageHeading.tag}</span>
+            </header>
 
             <div key={activeView} className={`platform-view-pane platform-view-pane--${activeView}`}>
         {activeView === "inicio" ? (
@@ -2119,6 +2460,92 @@ export default function HomePage() {
 
                   <div className="platform-settings-admin-panel">
                     <div className="platform-settings-admin-section">
+                      <h4>Contas bancárias</h4>
+                      <p className="platform-settings-block-desc">
+                        Cadastre quantas contas precisar por banco (Master 1, Master 2, Administrativo, etc.).
+                      </p>
+                      <div className="platform-settings-admin-reset-row platform-settings-add-account-row">
+                        <label className="platform-settings-field platform-settings-admin-reset-input">
+                          <span className="platform-settings-field-label">Banco</span>
+                          <select
+                            className="platform-settings-select"
+                            value={newAccountBank}
+                            onChange={(e) => setNewAccountBank(e.target.value as BankKey)}
+                          >
+                            <option value="bb">Banco do Brasil</option>
+                            <option value="itau_sigra">Itaú / SIGRA</option>
+                          </select>
+                        </label>
+                        <label className="platform-settings-field platform-settings-admin-reset-input">
+                          <span className="platform-settings-field-label">Nome da conta</span>
+                          <input
+                            type="text"
+                            placeholder="Ex.: Master 1"
+                            value={newAccountName}
+                            onChange={(e) => setNewAccountName(e.target.value)}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          className="platform-settings-approve-btn platform-settings-generate-link"
+                          disabled={accountsBusy}
+                          onClick={() => createFinanceAccount().catch(() => null)}
+                        >
+                          {accountsBusy ? "Salvando…" : "Adicionar conta"}
+                        </button>
+                      </div>
+                      <div className="platform-settings-accounts-scroll">
+                      <ul className="platform-settings-accounts-list">
+                        {financeAccounts.length === 0 && (
+                          <li className="platform-settings-empty muted">
+                            Nenhuma conta cadastrada ainda.
+                          </li>
+                        )}
+                        {financeAccounts.map((account) => (
+                          <li key={account.id} className="platform-settings-account-item">
+                            <div>
+                              <strong>{account.name}</strong>
+                              <span>
+                                {account.bank === "bb" ? "BB" : "Itaú"} · {account.slug}
+                                {Number(account.is_active) !== 1 ? " · inativa" : " · ativa"}
+                              </span>
+                            </div>
+                            {Number(account.is_active) === 1 ? (
+                              <button
+                                type="button"
+                                className="btn-secondary platform-settings-reject-btn"
+                                disabled={accountsBusy}
+                                onClick={() => deactivateFinanceAccount(account.id).catch(() => null)}
+                              >
+                                Desativar
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="platform-settings-approve-btn"
+                                disabled={accountsBusy}
+                                onClick={() => reactivateFinanceAccount(account.id).catch(() => null)}
+                              >
+                                Reativar
+                              </button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                      </div>
+                      {accountsError && (
+                        <p className="platform-settings-feedback platform-settings-feedback--error">
+                          {accountsError}
+                        </p>
+                      )}
+                      {accountsMessage && (
+                        <p className="platform-settings-feedback platform-settings-feedback--ok">
+                          {accountsMessage}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="platform-settings-admin-section">
                       <div className="platform-settings-approvals-head">
                         <h4>Cadastros pendentes</h4>
                         <button
@@ -2237,34 +2664,44 @@ export default function HomePage() {
               </button>
             </footer>
           </section>
+        ) : activeView === "operacoes" ? (
+          <section className="platform-operacoes" aria-label="Painel de operações">
+            <div className="platform-operacoes-flows platform-operacoes-flows--compact" role="tablist" aria-label="Fluxos de comércio exterior">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={operationsView === "importacao"}
+                className={`platform-operacoes-flow-tab ${operationsView === "importacao" ? "active" : ""}`}
+                onClick={() => setOperationsView("importacao")}
+              >
+                Importação
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={operationsView === "exportacao"}
+                className={`platform-operacoes-flow-tab ${operationsView === "exportacao" ? "active" : ""}`}
+                onClick={() => setOperationsView("exportacao")}
+              >
+                Exportação
+              </button>
+            </div>
+
+            <OperacoesPanel
+              apiFetch={apiFetch}
+              operationsView={operationsView}
+              username={currentUser.username}
+              isAdmin={currentUser.role === "admin"}
+            />
+          </section>
         ) : activeView === "rh" ? (
           authToken ? <RhModule apiBase={API_BASE} authToken={authToken} /> : null
         ) : activeView !== "financeiro" ? (
           <section className="panel platform-sector-empty">
-            {activeView === "operacoes" ? (
-              <>
-                <h2>Painel de Operações</h2>
-                <p className="subtitle">Escolha o fluxo de Comércio Exterior que deseja operar neste módulo.</p>
-                {operationsView === "importacao" ? (
-                  <p className="info-note">
-                    Fluxo de <b>Importação</b> selecionado. Aqui você pode acompanhar processos de compras internacionais,
-                    desembaraço aduaneiro e nacionalização.
-                  </p>
-                ) : (
-                  <p className="info-note">
-                    Fluxo de <b>Exportação</b> selecionado. Aqui você pode acompanhar embarques internacionais, documentação,
-                    compliance e fechamento cambial.
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <h2>{SECTOR_MENU.find((item) => item.key === activeView)?.label} em breve</h2>
-                <p className="subtitle">
-                  Este setor já está previsto na navegação. Quando quiser, eu estruturo as telas e fluxos deste módulo também.
-                </p>
-              </>
-            )}
+            <h2>{SECTOR_MENU.find((item) => item.key === activeView)?.label} em breve</h2>
+            <p className="subtitle">
+              Este setor já está previsto na navegação. Quando quiser, eu estruturo as telas e fluxos deste módulo também.
+            </p>
           </section>
         ) : (
           <main className="app-shell app-shell--financeiro">
@@ -2320,11 +2757,43 @@ export default function HomePage() {
             Itaú / SIGRA ({runCountsByBank.itau_sigra})
           </button>
         </div>
+
+        <div className="finance-account-row">
+          <span className="finance-account-row-label">Conta</span>
+          <div className="tab-row finance-account-tabs">
+            {accountsForBank.map((account) => (
+              <button
+                key={account.id}
+                type="button"
+                className={`tab-btn finance-account-tab ${selectedAccountId === account.id ? "active" : ""}`}
+                onClick={() => {
+                  setSelectedAccountId(account.id);
+                  setSelectedRunId(null);
+                  setDataset(null);
+                }}
+              >
+                {account.name} ({runCountByAccountId[account.id] || 0})
+              </button>
+            ))}
+            {accountsForBank.length === 0 && (
+              <span className="muted">
+                {inactiveAccountsForBank.length > 0
+                  ? `${inactiveAccountsForBank.length} conta(s) inativa(s) — reative em Configurações → Contas bancárias.`
+                  : "Nenhuma conta ativa. Peça ao admin para cadastrar em Configurações."}
+              </span>
+            )}
+          </div>
+        </div>
+
         <p className="subtitle" style={{ marginBottom: 12 }}>
-          {automations.find((a) => a.key === bankView)?.description ||
-            (bankView === "bb"
-              ? "Executa a rotina de conciliação Banco do Brasil."
-              : "Executa a rotina de conciliação Itaú com SIGRA/Numerário.")}
+          {selectedAccount
+            ? `Rodada para ${selectedAccount.name} — ${
+                automations.find((a) => a.key === bankView)?.description ||
+                (bankView === "bb"
+                  ? "conciliação Banco do Brasil."
+                  : "conciliação Itaú com SIGRA/Numerário.")
+              }`
+            : "Selecione a conta bancária da rodada."}
         </p>
 
         <div className="doc-grid">
@@ -2383,7 +2852,9 @@ export default function HomePage() {
               type="button"
               className="btn-primary"
               onClick={triggerRun}
-              disabled={loading || flattenedFiles.length === 0 || hasMissingRequiredDocs}
+              disabled={
+                loading || !selectedAccountId || flattenedFiles.length === 0 || hasMissingRequiredDocs
+              }
             >
               {loading ? "Disparando..." : "Executar conciliação"}
             </button>
@@ -2409,10 +2880,24 @@ export default function HomePage() {
       <section className="layout-grid">
         <div className="panel">
           <h2>Execuções</h2>
-          <p className="subtitle">Execuções filtradas para {bankView === "bb" ? "Banco do Brasil" : "Itaú / SIGRA"}.</p>
+          <p className="subtitle">
+            Execuções de {selectedAccount?.name || "—"} (
+            {bankView === "bb" ? "Banco do Brasil" : "Itaú / SIGRA"}).
+          </p>
           <div className="control-row" style={{ marginBottom: 10 }}>
-            <button type="button" className="btn-secondary" onClick={() => loadRuns().catch(() => null)} disabled={loading}>
-              Atualizar
+            <button
+              type="button"
+              className="btn-secondary"
+              disabled={loading || runsRefreshing}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                refreshRuns().catch((err) =>
+                  setError(err instanceof Error ? err.message : "Erro ao atualizar execuções."),
+                );
+              }}
+            >
+              {runsRefreshing ? "Atualizando…" : "Atualizar"}
             </button>
             <button type="button" className="btn-secondary" onClick={clearAllRuns} disabled={loading}>
               Limpar histórico
@@ -2423,7 +2908,7 @@ export default function HomePage() {
               <thead>
                 <tr>
                   <th>ID</th>
-                  <th>Automação</th>
+                  <th>Conta</th>
                   <th>Status</th>
                   <th>Usuário</th>
                   <th>Atualizado</th>
@@ -2437,7 +2922,7 @@ export default function HomePage() {
                     className={`clickable ${selectedRun?.id === run.id ? "active" : ""}`}
                   >
                     <td>{run.id}</td>
-                    <td>{run.automation_key}</td>
+                    <td>{run.account_name || "—"}</td>
                     <td>
                       <span className={statusClass(run.status)}>{run.status}</span>
                     </td>
@@ -2447,7 +2932,7 @@ export default function HomePage() {
                 ))}
                 {filteredRuns.length === 0 && (
                   <tr>
-                    <td colSpan={5}>Sem execuções para este banco.</td>
+                    <td colSpan={5}>Sem execuções para esta conta.</td>
                   </tr>
                 )}
               </tbody>
@@ -2466,7 +2951,7 @@ export default function HomePage() {
           {selectedRun ? (
             <>
               <p className="subtitle">
-                Execução #{selectedRun.id} • {selectedRun.automation_key} •{" "}
+                Execução #{selectedRun.id} • {selectedRun.account_name || selectedRun.automation_key} •{" "}
                 <span className={statusClass(selectedRun.status)}>{selectedRun.status}</span>
               </p>
               <div className="run-focus-grid">
@@ -2621,8 +3106,7 @@ export default function HomePage() {
                     <option value="ref_sigra">Ref. Sigra</option>
                     <option value="status">Status</option>
                   </select>
-                  <input
-                    type="text"
+                  <FilterSearchInput
                     placeholder={
                       filterField === "data"
                         ? "Digite a data (ex.: 08/05/2026)"
@@ -2637,7 +3121,7 @@ export default function HomePage() {
                                 : "Digite para filtrar em todas as colunas"
                     }
                     value={filterValue}
-                    onChange={(e) => setFilterValue(e.target.value)}
+                    onChange={setFilterValue}
                   />
                 </div>
                 <p className="subtitle" style={{ marginBottom: 8 }}>
@@ -2721,11 +3205,10 @@ export default function HomePage() {
                     <option value="descricao">Categoria / Cliente</option>
                     <option value="ref_sigra">Ref. Sigra</option>
                   </select>
-                  <input
-                    type="text"
+                  <FilterSearchInput
                     placeholder="Filtrar conciliações…"
                     value={filterValue}
-                    onChange={(e) => setFilterValue(e.target.value)}
+                    onChange={setFilterValue}
                   />
                 </div>
                 <p className="subtitle" style={{ marginBottom: 8 }}>
@@ -2845,25 +3328,6 @@ export default function HomePage() {
                   {sector.label}
                 </button>
               ))}
-              {activeView === "operacoes" && (
-                <>
-                  <span className="platform-bottomnav-divider" aria-hidden="true" />
-                  <button
-                    type="button"
-                    className={`platform-nav-pill ${operationsView === "importacao" ? "active" : ""}`}
-                    onClick={() => setOperationsView("importacao")}
-                  >
-                    Importação
-                  </button>
-                  <button
-                    type="button"
-                    className={`platform-nav-pill ${operationsView === "exportacao" ? "active" : ""}`}
-                    onClick={() => setOperationsView("exportacao")}
-                  >
-                    Exportação
-                  </button>
-                </>
-              )}
               <span className="platform-bottomnav-divider" aria-hidden="true" />
               <button
                 type="button"

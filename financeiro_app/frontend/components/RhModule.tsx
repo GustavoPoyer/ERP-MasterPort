@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
-type RhView = "overview" | "calendario" | "colaboradores" | "admissao" | "demissao" | "ferias" | "folha";
+export type RhView = "overview" | "calendario" | "colaboradores" | "admissao" | "demissao" | "ferias" | "folha";
+
+export const RH_VIEW_LABELS: Record<RhView, string> = {
+  overview: "Visão geral",
+  calendario: "Calendário",
+  colaboradores: "Colaboradores",
+  admissao: "Admissão",
+  demissao: "Demissão",
+  ferias: "Férias",
+  folha: "Folha salarial",
+};
 
 type RhDashboard = {
   total_employees: number;
