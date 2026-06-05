@@ -114,3 +114,74 @@ class AppPasswordReset(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RhEmployee(Base):
+    __tablename__ = "rh_employees"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(180), index=True)
+    email: Mapped[str] = mapped_column(String(180), default="")
+    department: Mapped[str] = mapped_column(String(120), default="")
+    job_title: Mapped[str] = mapped_column(String(120), default="")
+    salary_base: Mapped[float] = mapped_column(Float, default=0.0)
+    vacation_balance_days: Mapped[int] = mapped_column(Integer, default=30)
+    admission_date: Mapped[str] = mapped_column(String(20), default="")
+    status: Mapped[str] = mapped_column(String(30), default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
+class RhVacationRequest(Base):
+    __tablename__ = "rh_vacation_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    employee_id: Mapped[int] = mapped_column(Integer, index=True)
+    start_date: Mapped[str] = mapped_column(String(20), index=True)
+    end_date: Mapped[str] = mapped_column(String(20), index=True)
+    days: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
+class RhPayrollRecord(Base):
+    __tablename__ = "rh_payroll_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    employee_id: Mapped[int] = mapped_column(Integer, index=True)
+    reference_month: Mapped[str] = mapped_column(String(7), index=True)
+    gross_salary: Mapped[float] = mapped_column(Float, default=0.0)
+    deductions: Mapped[float] = mapped_column(Float, default=0.0)
+    net_salary: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+
+
+class RhCalendarEvent(Base):
+    __tablename__ = "rh_calendar_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    event_type: Mapped[str] = mapped_column(String(40), index=True, default="geral")
+    start_date: Mapped[str] = mapped_column(String(20), index=True)
+    end_date: Mapped[str] = mapped_column(String(20), default="")
+    employee_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    color: Mapped[str] = mapped_column(String(20), default="#d9f99d")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

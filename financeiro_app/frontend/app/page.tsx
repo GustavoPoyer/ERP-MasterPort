@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { KivoAssistant } from "../components/KivoAssistant";
 import { KivoRobot } from "../components/KivoRobot";
+import { RhModule } from "../components/RhModule";
 
 type AutomationInfo = {
   key: string;
@@ -146,6 +147,25 @@ const SECTOR_MENU: { key: SectorKey; label: string; subtitle: string }[] = [
   { key: "rh", label: "RH", subtitle: "Pessoal e folha" },
   { key: "operacoes", label: "Operações", subtitle: "Rotinas internas" },
 ];
+
+const LANDING_SHOWCASE = [
+  {
+    key: "financeiro",
+    label: "Financeiro",
+    title: "Painel de conciliação",
+    description: "Monte rodadas para Banco do Brasil e Itaú/SIGRA com upload de extratos e comprovantes.",
+    src: "/brand/landing/financeiro-painel.png",
+    alt: "Painel financeiro do KIVO com KPIs e montagem de rodada de conciliação",
+  },
+  {
+    key: "execucoes",
+    label: "Execuções",
+    title: "Histórico e auditoria",
+    description: "Acompanhe execuções, status, conciliações e logs técnicos em tempo real.",
+    src: "/brand/landing/financeiro-execucoes.png",
+    alt: "Tela de execuções e logs técnicos do módulo financeiro KIVO",
+  },
+] as const;
 
 function platformPageTitle(view: PlatformView): string {
   if (view === "inicio") return "Início";
@@ -1692,10 +1712,9 @@ export default function HomePage() {
             />
           </div>
           <nav className="lp-nav">
-            <a href="#lp-modules">Soluções</a>
+            <a href="#lp-journey">Plataforma</a>
             <a href="#lp-modules">Módulos</a>
-            <a href="#lp-journey">API</a>
-            <a href="#lp-journey">Planos</a>
+            <a href="#lp-login">Acesso</a>
           </nav>
         </header>
 
@@ -1713,9 +1732,9 @@ export default function HomePage() {
               <button
                 type="button"
                 className="lp-btn-ghost"
-                onClick={() => document.getElementById("lp-modules")?.scrollIntoView({ behavior: "smooth" })}
+                onClick={() => document.getElementById("lp-journey")?.scrollIntoView({ behavior: "smooth" })}
               >
-                Conhecer os Módulos
+                Ver a plataforma
                 <span className="lp-chevron" aria-hidden="true">
                   ↓
                 </span>
@@ -1745,6 +1764,62 @@ export default function HomePage() {
               </button>
             </div>
           </article>
+        </section>
+
+        <section className="lp-flow-section" id="lp-journey">
+          <div className="lp-flow-header">
+            <span className="lp-flow-kicker">COMO OPERAR NA MÉTRICA</span>
+            <h2>Uma jornada simples para operar e escalar.</h2>
+            <p>
+              Da entrada dos documentos ao acompanhamento dos resultados, o fluxo foi pensado para reduzir atrito no dia
+              a dia do financeiro.
+            </p>
+          </div>
+
+          <div className="lp-flow-steps">
+            <article className="lp-flow-step">
+              <span className="lp-flow-index">01</span>
+              <h3>Monte a rodada</h3>
+              <p>Selecione banco, anexe extratos e comprovantes, e valide os arquivos obrigatórios.</p>
+              <div className="lp-screen-preview">
+                <Image
+                  src={LANDING_SHOWCASE[0].src}
+                  alt={LANDING_SHOWCASE[0].alt}
+                  width={640}
+                  height={360}
+                  className="lp-screen-preview-img"
+                />
+              </div>
+            </article>
+            <article className="lp-flow-step">
+              <span className="lp-flow-index">02</span>
+              <h3>Execute em um clique</h3>
+              <p>Dispare a automação e acompanhe o status da execução sem trocar de tela.</p>
+              <div className="lp-screen-preview">
+                <Image
+                  src={LANDING_SHOWCASE[0].src}
+                  alt={LANDING_SHOWCASE[0].alt}
+                  width={640}
+                  height={360}
+                  className="lp-screen-preview-img"
+                />
+              </div>
+            </article>
+            <article className="lp-flow-step">
+              <span className="lp-flow-index">03</span>
+              <h3>Analise e audite</h3>
+              <p>Consulte logs, pendências e histórico consolidado com rastreabilidade ponta a ponta.</p>
+              <div className="lp-screen-preview">
+                <Image
+                  src={LANDING_SHOWCASE[1].src}
+                  alt={LANDING_SHOWCASE[1].alt}
+                  width={640}
+                  height={360}
+                  className="lp-screen-preview-img"
+                />
+              </div>
+            </article>
+          </div>
         </section>
 
         <section className="lp-module-grid" id="lp-modules">
@@ -1777,68 +1852,6 @@ export default function HomePage() {
             <h3>Governança auditada</h3>
             <p>Rastreabilidade ponta a ponta com controle de acesso por papel.</p>
           </article>
-        </section>
-
-        <section className="lp-flow-section" id="lp-journey">
-          <div className="lp-flow-header">
-            <span className="lp-flow-kicker">COMO OPERAR NA MÉTRICA</span>
-            <h2>Uma jornada simples para operar e escalar.</h2>
-            <p>
-              Da entrada dos documentos ao acompanhamento dos resultados, o fluxo foi pensado para reduzir atrito no dia
-              a dia do financeiro.
-            </p>
-          </div>
-
-          <div className="lp-flow-steps">
-            <article className="lp-flow-step">
-              <span className="lp-flow-index">01</span>
-              <h3>Monte a rodada</h3>
-              <p>Selecione banco, anexe extratos e comprovantes, e valide os arquivos obrigatórios.</p>
-              <div className="lp-dash-preview" aria-hidden="true">
-                <div className="lp-dash-toolbar" />
-                <div className="lp-dash-chart" />
-                <div className="lp-dash-rows">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            </article>
-            <article className="lp-flow-step">
-              <span className="lp-flow-index">02</span>
-              <h3>Execute em um clique</h3>
-              <p>Dispare a automação e acompanhe o status da execução sem trocar de tela.</p>
-              <div className="lp-dash-preview lp-dash-preview--wide" aria-hidden="true">
-                <div className="lp-dash-toolbar" />
-                <div className="lp-dash-kpis">
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <div className="lp-dash-rows">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-              </div>
-            </article>
-            <article className="lp-flow-step">
-              <span className="lp-flow-index">03</span>
-              <h3>Analise e audite</h3>
-              <p>Consulte logs, pendências e histórico consolidado com rastreabilidade ponta a ponta.</p>
-              <div className="lp-dash-preview" aria-hidden="true">
-                <div className="lp-dash-toolbar" />
-                <div className="lp-dash-split">
-                  <div className="lp-dash-chart lp-dash-chart--sm" />
-                  <div className="lp-dash-rows">
-                    <span />
-                    <span />
-                  </div>
-                </div>
-              </div>
-            </article>
-          </div>
         </section>
       </main>
     );
@@ -1907,7 +1920,9 @@ export default function HomePage() {
             className={`platform-dashboard${
               activeView === "financeiro"
                 ? " platform-dashboard--financeiro"
-                : " platform-dashboard--centered"
+                : activeView === "rh"
+                  ? " platform-dashboard--rh"
+                  : " platform-dashboard--centered"
             }`}
           >
             {activeView !== "inicio" && (
@@ -2222,6 +2237,8 @@ export default function HomePage() {
               </button>
             </footer>
           </section>
+        ) : activeView === "rh" ? (
+          authToken ? <RhModule apiBase={API_BASE} authToken={authToken} /> : null
         ) : activeView !== "financeiro" ? (
           <section className="panel platform-sector-empty">
             {activeView === "operacoes" ? (
