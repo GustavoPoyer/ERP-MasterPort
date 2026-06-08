@@ -14,6 +14,8 @@ class SectorAutomationRead(BaseModel):
     id: int
     sector: str
     flow: str
+    client_slug: str
+    visibility: str
     key: str
     name: str
     description: str
@@ -29,6 +31,8 @@ class SectorAutomationRead(BaseModel):
 class SectorAutomationCreate(BaseModel):
     sector: str = Field(default="operacoes", max_length=40)
     flow: str = Field(..., examples=["importacao", "exportacao"])
+    client_slug: str = Field(default="", max_length=80)
+    visibility: str = Field(default="flow", examples=["global", "sector", "flow", "client"])
     key: str | None = Field(default=None, max_length=100)
     name: str = Field(..., min_length=2, max_length=160)
     description: str = Field(default="")
@@ -36,7 +40,7 @@ class SectorAutomationCreate(BaseModel):
         ...,
         min_length=8,
         max_length=500,
-        description="Rota relativa, ex.: automations/operacoes/importacao/meu_script.py",
+        description="Rota relativa, ex.: automations/operacoes/importacao/yaro/run.py",
     )
     sort_order: int = Field(default=0, ge=0)
 
@@ -44,9 +48,41 @@ class SectorAutomationCreate(BaseModel):
 class SectorAutomationUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=160)
     description: str | None = None
+    client_slug: str | None = Field(default=None, max_length=80)
+    visibility: str | None = Field(default=None, max_length=20)
     script_path: str | None = Field(default=None, min_length=8, max_length=500)
     sort_order: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
+
+
+class AutomationClientRead(BaseModel):
+    id: int
+    sector: str
+    flow: str
+    slug: str
+    name: str
+    sort_order: int
+    is_active: int
+
+    class Config:
+        from_attributes = True
+
+
+class AutomationClientCreate(BaseModel):
+    sector: str = Field(default="operacoes", max_length=40)
+    flow: str = Field(..., examples=["importacao", "exportacao"])
+    slug: str | None = Field(default=None, max_length=80)
+    name: str = Field(..., min_length=2, max_length=160)
+    sort_order: int = Field(default=0, ge=0)
+
+
+class UserClientAccessRead(BaseModel):
+    user_id: int
+    client_ids: list[int]
+
+
+class UserClientAccessUpdate(BaseModel):
+    client_ids: list[int] = Field(default_factory=list)
 
 
 class FinanceAccountRead(BaseModel):

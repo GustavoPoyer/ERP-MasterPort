@@ -5,3 +5,5 @@ psycopg[binary]
 python-multipart
 pandas
 openpyxl
+pypdf
+pdfplumber

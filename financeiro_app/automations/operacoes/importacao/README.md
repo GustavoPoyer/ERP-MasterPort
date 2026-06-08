@@ -1,10 +1,23 @@
-# Importação — coloque sua automação aqui
+# Importação — automações por cliente
+
+## Estrutura recomendada
+
+```
+importacao/
+  yaro/           ← cliente Yaro
+    run.py
+  tahara/         ← cliente Tahara
+    planilhatahara.py
+  _geral/         ← scripts da equipe (sem cliente)
+```
+
+Cadastre o cliente em **Operações → Importação → + Novo cliente** (admin) antes de vincular automações.
 
 ## Pelo site (recomendado)
 
-1. Coloque o `.py` nesta pasta (ex.: `meu_script.py`).
+1. Coloque o `.py` na pasta do cliente (ex.: `yaro/run.py`).
 2. Em **Operações → Importação**, clique em **+ Nova automação**.
-3. Preencha nome, descrição e rota: `automations/operacoes/importacao/meu_script.py`.
+3. Escolha o **cliente**, preencha nome/descrição e rota: `automations/operacoes/importacao/yaro/run.py`.
 4. Use o card para anexar arquivos e **Executar**.
 
 Não é necessário editar o backend.

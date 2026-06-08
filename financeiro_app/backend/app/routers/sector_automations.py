@@ -2,21 +2,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..automation_constants import ALLOWED_FLOWS, ALLOWED_SECTORS, ALLOWED_VISIBILITY
 from ..config import settings
 from ..db import get_db
 from ..models import AppUser, SectorAutomation
 from ..schemas import SectorAutomationCreate, SectorAutomationRead, SectorAutomationUpdate
 from ..services.auth_service import require_current_user
+from ..services.automation_access import normalize_slug
 from ..services.automation_catalog import (
-    list_sector_automations,
+    get_client_by_slug,
+    list_visible_automations,
     slugify_key,
     validate_script_path,
 )
 
 router = APIRouter(prefix="/sector-automations", tags=["sector-automations"])
-
-ALLOWED_SECTORS = {"operacoes", "financeiro", "rh", "pedro"}
-ALLOWED_FLOWS = {"importacao", "exportacao", "geral"}
 
 
 def _can_manage_sector(user: AppUser, sector: str) -> bool:
@@ -25,10 +25,28 @@ def _can_manage_sector(user: AppUser, sector: str) -> bool:
     return user.sector == sector.strip().lower()
 
 
+def _validate_visibility_payload(
+    visibility: str,
+    sector: str,
+    flow: str,
+    client_slug: str,
+) -> tuple[str, str]:
+    vis = visibility.strip().lower()
+    if vis not in ALLOWED_VISIBILITY:
+        raise HTTPException(status_code=400, detail="Visibilidade inválida. Use global, sector, flow ou client.")
+    slug = normalize_slug(client_slug) if client_slug else ""
+    if vis == "client" and not slug:
+        raise HTTPException(status_code=400, detail="Informe client_slug para visibilidade 'client'.")
+    if vis == "global" and sector != "shared":
+        pass
+    return vis, slug
+
+
 @router.get("", response_model=list[SectorAutomationRead])
 def list_automations(
     sector: str,
     flow: str | None = None,
+    client_slug: str | None = None,
     include_inactive: bool = False,
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_current_user),
@@ -39,13 +57,15 @@ def list_automations(
     if user.role != "admin" and user.sector != sector_norm:
         raise HTTPException(status_code=403, detail="Acesso restrito a este setor.")
 
-    rows = list_sector_automations(
+    return list_visible_automations(
         db,
+        user,
         sector=sector_norm,
         flow=flow,
+        client_slug=client_slug,
+        include_globals=True,
         active_only=not include_inactive,
     )
-    return rows
 
 
 @router.post("", response_model=SectorAutomationRead, status_code=201)
@@ -56,12 +76,28 @@ def create_automation(
 ):
     sector = payload.sector.strip().lower()
     flow = payload.flow.strip().lower()
-    if sector not in ALLOWED_SECTORS:
+    if sector not in ALLOWED_SECTORS and sector != "shared":
         raise HTTPException(status_code=400, detail="Setor inválido.")
     if flow not in ALLOWED_FLOWS:
         raise HTTPException(status_code=400, detail="Fluxo inválido. Use importacao, exportacao ou geral.")
-    if not _can_manage_sector(user, sector):
+    if not _can_manage_sector(user, sector) and sector != "shared":
         raise HTTPException(status_code=403, detail="Sem permissão para cadastrar automação neste setor.")
+    if sector == "shared" and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Somente admin cadastra automações globais.")
+
+    visibility, client_slug = _validate_visibility_payload(
+        payload.visibility,
+        sector,
+        flow,
+        payload.client_slug,
+    )
+    if client_slug:
+        client = get_client_by_slug(db, sector, flow, client_slug)
+        if not client:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cliente '{client_slug}' não cadastrado em {sector}/{flow}.",
+            )
 
     key = (payload.key or slugify_key(payload.name)).strip().lower()
     if not key:
@@ -79,6 +115,8 @@ def create_automation(
     row = SectorAutomation(
         sector=sector,
         flow=flow,
+        client_slug=client_slug,
+        visibility=visibility,
         key=key,
         name=payload.name.strip(),
         description=(payload.description or "").strip(),
@@ -103,8 +141,10 @@ def update_automation(
     row = db.get(SectorAutomation, automation_id)
     if not row:
         raise HTTPException(status_code=404, detail="Automação não encontrada.")
-    if not _can_manage_sector(user, row.sector):
+    if not _can_manage_sector(user, row.sector) and row.sector != "shared":
         raise HTTPException(status_code=403, detail="Sem permissão para editar esta automação.")
+    if row.sector == "shared" and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Somente admin edita automações globais.")
 
     data = payload.model_dump(exclude_unset=True)
     if "script_path" in data and data["script_path"]:
@@ -116,6 +156,13 @@ def update_automation(
         data["is_active"] = 1 if data["is_active"] else 0
     if "name" in data and data["name"]:
         data["name"] = data["name"].strip()
+    if "client_slug" in data and data["client_slug"] is not None:
+        data["client_slug"] = normalize_slug(data["client_slug"])
+    if "visibility" in data and data["visibility"] is not None:
+        vis = data["visibility"].strip().lower()
+        if vis not in ALLOWED_VISIBILITY:
+            raise HTTPException(status_code=400, detail="Visibilidade inválida.")
+        data["visibility"] = vis
 
     for key, value in data.items():
         setattr(row, key, value)
@@ -134,7 +181,7 @@ def delete_automation(
     row = db.get(SectorAutomation, automation_id)
     if not row:
         raise HTTPException(status_code=404, detail="Automação não encontrada.")
-    if not _can_manage_sector(user, row.sector):
+    if not _can_manage_sector(user, row.sector) and row.sector != "shared":
         raise HTTPException(status_code=403, detail="Sem permissão para remover esta automação.")
 
     row.is_active = 0

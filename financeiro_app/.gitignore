@@ -4,5 +4,8 @@ frontend/.next/
 backend/financeiro_app.db
 downloads/
 output/
+**/Saida/
+**/ocr_debug.log
+run_logs.txt
 **/__pycache__/
 *.pyc

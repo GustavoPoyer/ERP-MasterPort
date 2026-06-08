@@ -200,12 +200,40 @@ class RhCalendarEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class AutomationClient(Base):
+    """Cliente dentro de uma equipe (ex.: Yaro em Importação)."""
+
+    __tablename__ = "automation_clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    sector: Mapped[str] = mapped_column(String(40), index=True)
+    flow: Mapped[str] = mapped_column(String(40), index=True)
+    slug: Mapped[str] = mapped_column(String(80), index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserClientAccess(Base):
+    """Quais clientes um usuário pode ver/executar (visibility=client)."""
+
+    __tablename__ = "user_client_access"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    client_id: Mapped[int] = mapped_column(Integer, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class SectorAutomation(Base):
     __tablename__ = "sector_automations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     sector: Mapped[str] = mapped_column(String(40), index=True)
     flow: Mapped[str] = mapped_column(String(40), index=True)
+    client_slug: Mapped[str] = mapped_column(String(80), default="", index=True)
+    visibility: Mapped[str] = mapped_column(String(20), default="flow", index=True)
     key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(Text, default="")

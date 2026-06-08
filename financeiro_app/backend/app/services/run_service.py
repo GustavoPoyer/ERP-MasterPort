@@ -268,9 +268,14 @@ def _stage_uploaded_files(run: ReconciliationRun, workspace: str, parameters: di
     if not uploads:
         return [], ""
 
-    date_folder = datetime.now().strftime("%Y-%m-%d")
-    downloads_dir = Path(workspace) / "downloads" / date_folder
-    downloads_dir.mkdir(parents=True, exist_ok=True)
+    temp_dir = (parameters.get("temp_dir") or "").strip()
+    if temp_dir:
+        staging_dir = Path(temp_dir)
+        staging_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        date_folder = datetime.now().strftime("%Y-%m-%d")
+        staging_dir = Path(workspace) / "downloads" / date_folder
+        staging_dir.mkdir(parents=True, exist_ok=True)
 
     staged_paths: list[str] = []
     for up in uploads:
@@ -282,17 +287,19 @@ def _stage_uploaded_files(run: ReconciliationRun, workspace: str, parameters: di
         safe_original = _safe_filename(original)
         prefix = _slot_prefix_for_file(run.automation_key, slot_key)
         final_name = f"run{run.id}_{prefix}_{safe_original}"
-        dst = downloads_dir / final_name
-        shutil.copy2(src, dst)
+        dst = staging_dir / final_name
+        if Path(src).resolve() != dst.resolve():
+            shutil.copy2(src, dst)
         staged_paths.append(str(dst))
 
-    return staged_paths, str(downloads_dir)
+    return staged_paths, str(staging_dir)
 
 
 def execute_run(run_id: int) -> None:
     from ..db import SessionLocal
 
     db = SessionLocal()
+    temp_dir_to_cleanup = ""
     try:
         run = db.get(ReconciliationRun, run_id)
         if not run:
@@ -311,6 +318,7 @@ def execute_run(run_id: int) -> None:
         db.commit()
 
         parameters = json.loads(run.parameters_json or "{}")
+        temp_dir_to_cleanup = (parameters.get("temp_dir") or "").strip()
         staged_files, staged_dir = _stage_uploaded_files(run, settings.automation_workspace, parameters)
         if staged_files:
             run.logs = (
@@ -378,6 +386,8 @@ def execute_run(run_id: int) -> None:
         if result.success:
             _ingest_run_output(db, run)
     finally:
+        if temp_dir_to_cleanup:
+            cleanup_temp_dir(temp_dir_to_cleanup)
         db.close()
 
 

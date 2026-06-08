@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { KivoAssistant } from "../components/KivoAssistant";
 import { KivoRobot } from "../components/KivoRobot";
+import { AutomationClientAccessPanel } from "../components/AutomationClientAccessPanel";
 import { OperacoesPanel } from "../components/OperacoesPanel";
 import { RhModule, RH_VIEW_LABELS, type RhView } from "../components/RhModule";
 
@@ -2653,6 +2654,8 @@ export default function HomePage() {
                         <p className="platform-settings-feedback platform-settings-feedback--ok">{adminMessage}</p>
                       )}
                     </div>
+
+                    <AutomationClientAccessPanel apiFetch={apiFetch} />
                   </div>
                 </section>
               )}
@@ -2666,26 +2669,36 @@ export default function HomePage() {
           </section>
         ) : activeView === "operacoes" ? (
           <section className="platform-operacoes" aria-label="Painel de operações">
-            <div className="platform-operacoes-flows platform-operacoes-flows--compact" role="tablist" aria-label="Fluxos de comércio exterior">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={operationsView === "importacao"}
-                className={`platform-operacoes-flow-tab ${operationsView === "importacao" ? "active" : ""}`}
-                onClick={() => setOperationsView("importacao")}
+            <header className="platform-operacoes-page-head">
+              <div className="platform-operacoes-page-head-text">
+                <h2>Comex</h2>
+                <p>Automações por equipe e cliente</p>
+              </div>
+              <div
+                className="platform-operacoes-flows platform-operacoes-flows--compact"
+                role="tablist"
+                aria-label="Equipes"
               >
-                Importação
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={operationsView === "exportacao"}
-                className={`platform-operacoes-flow-tab ${operationsView === "exportacao" ? "active" : ""}`}
-                onClick={() => setOperationsView("exportacao")}
-              >
-                Exportação
-              </button>
-            </div>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={operationsView === "importacao"}
+                  className={`platform-operacoes-flow-tab ${operationsView === "importacao" ? "active" : ""}`}
+                  onClick={() => setOperationsView("importacao")}
+                >
+                  Importação
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={operationsView === "exportacao"}
+                  className={`platform-operacoes-flow-tab ${operationsView === "exportacao" ? "active" : ""}`}
+                  onClick={() => setOperationsView("exportacao")}
+                >
+                  Exportação
+                </button>
+              </div>
+            </header>
 
             <OperacoesPanel
               apiFetch={apiFetch}
