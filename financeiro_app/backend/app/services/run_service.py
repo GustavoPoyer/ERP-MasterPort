@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import shutil
 import threading
@@ -9,7 +10,7 @@ from datetime import datetime
 from collections import Counter
 
 from sqlalchemy.orm import Session
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from ..automations.registry import get_automation
 from ..config import settings
@@ -57,19 +58,49 @@ def _str_or_empty(v) -> str:
 
 
 def _float_or_zero(v) -> float:
+    """Converte valor monetário (float do Excel ou texto BR) sem inflar 100x."""
     if v is None:
         return 0.0
-    s = str(v).strip()
+    if isinstance(v, bool):
+        return float(int(v))
+    if isinstance(v, (int, float)):
+        if isinstance(v, float) and math.isnan(v):
+            return 0.0
+        return float(v)
+    if hasattr(v, "item") and not isinstance(v, (str, bytes)):
+        try:
+            return _float_or_zero(v.item())
+        except Exception:
+            pass
+
+    s = str(v).strip().replace("\xa0", "")
     if s == "" or s.lower() == "nan":
         return 0.0
-    s = s.replace("R$", "").replace(" ", "").replace(".", "").replace(",", ".")
+
+    s = s.replace("R$", "").replace("$", "").strip().replace(" ", "")
+
+    # Texto no formato brasileiro: 50.490,97 | 990,08
+    if "," in s:
+        if "." in s:
+            if s.rfind(",") > s.rfind("."):
+                s = s.replace(".", "").replace(",", ".")
+            else:
+                s = s.replace(",", "")
+        else:
+            partes = s.split(",")
+            if len(partes) == 2 and len(partes[1]) <= 2:
+                s = f"{partes[0]}.{partes[1]}"
+            else:
+                s = s.replace(",", "")
+    elif "." in s:
+        partes = s.split(".")
+        if not (len(partes) == 2 and len(partes[1]) <= 2):
+            s = s.replace(".", "")
+
     try:
         return float(s)
     except Exception:
-        try:
-            return float(v)
-        except Exception:
-            return 0.0
+        return 0.0
 
 
 def _first_non_empty(row, keys: list[str], default=None):
@@ -82,6 +113,172 @@ def _first_non_empty(row, keys: list[str], default=None):
             continue
         return v
     return default
+
+
+def _infer_direcao_movimento(
+    *,
+    inf_val: str = "",
+    valor_raw=0,
+    descricao: str = "",
+    excel_direcao: str = "",
+) -> str:
+    explicit = (excel_direcao or "").strip().lower()
+    if explicit in {"entrada", "credito", "crédito", "c", "in"}:
+        return "entrada"
+    if explicit in {"saida", "saída", "debito", "débito", "d", "out"}:
+        return "saida"
+
+    inf = (inf_val or "").strip().upper()
+    if inf in {"C", "CREDITO", "CRÉDITO"}:
+        return "entrada"
+    if inf in {"D", "DEBITO", "DÉBITO"}:
+        return "saida"
+
+    valor_num = _float_or_zero(valor_raw)
+    if valor_num < 0:
+        return "saida"
+    if valor_num > 0 and inf == "C":
+        return "entrada"
+
+    desc = (descricao or "").upper()
+    if any(term in desc for term in ("RECEBIMENTO", "RECEBIDO", "CREDITO", "CRÉDITO", "PIX RECEBIDO")):
+        return "entrada"
+    if any(
+        term in desc
+        for term in (
+            "PAGAMENTO",
+            "ENVIADO",
+            "DEBITO",
+            "DÉBITO",
+            "SISPAG",
+            "SISCOMEX",
+            "PUCOMEX",
+            "AFRMM",
+            "TARIFA",
+            "IOF",
+        )
+    ):
+        return "saida"
+    return ""
+
+
+def _build_extrato_direcao_map(output: str, xl) -> dict[str, str]:
+    if "extrato" not in xl.sheet_names:
+        return {}
+    try:
+        import pandas as pd
+
+        df_ext = pd.read_excel(output, sheet_name="extrato", engine="openpyxl")
+    except Exception:
+        return {}
+
+    id_col = None
+    for col in df_ext.columns:
+        col_lower = str(col).lower()
+        if "id" in col_lower and "extrato" in col_lower:
+            id_col = col
+            break
+    if id_col is None and "ID_extrato" in df_ext.columns:
+        id_col = "ID_extrato"
+
+    inf_col = None
+    valor_col = None
+    desc_col = None
+    for col in df_ext.columns:
+        col_lower = str(col).lower()
+        if inf_col is None and ("inf." in col_lower or col_lower in {"inf", "tipo", "d/c", "dc"}):
+            inf_col = col
+        if valor_col is None and "valor" in col_lower:
+            valor_col = col
+        if desc_col is None and any(
+            term in col_lower for term in ("historico", "lançamento", "lancamento", "favorecido", "descri")
+        ):
+            desc_col = col
+
+    mapping: dict[str, str] = {}
+    for _, row in df_ext.iterrows():
+        extrato_id = _str_or_empty(row.get(id_col, "")) if id_col else ""
+        if not extrato_id:
+            continue
+        mapping[extrato_id] = _infer_direcao_movimento(
+            inf_val=_str_or_empty(row.get(inf_col, "")) if inf_col else "",
+            valor_raw=row.get(valor_col, 0) if valor_col else 0,
+            descricao=_str_or_empty(row.get(desc_col, "")) if desc_col else "",
+        )
+    return mapping
+
+
+def _recalculate_run_metrics(db: Session, run_id: int) -> None:
+    statuses = list(db.scalars(select(RunStatusRow).where(RunStatusRow.run_id == run_id)))
+    counter = Counter()
+    total_pendentes = 0
+    for row in statuses:
+        status_val = (row.status or "").strip()
+        if status_val:
+            counter[status_val] += 1
+            if "Pendente" in status_val:
+                total_pendentes += 1
+
+    metric = db.scalar(select(RunMetric).where(RunMetric.run_id == run_id).limit(1))
+    if metric:
+        metric.total_pendentes_status = total_pendentes
+        metric.status_breakdown_json = json.dumps(dict(counter), ensure_ascii=False)
+        db.commit()
+
+
+def update_status_row(db: Session, run_id: int, row_id: int, payload: dict) -> RunStatusRow | None:
+    row = db.scalar(
+        select(RunStatusRow).where(RunStatusRow.run_id == run_id, RunStatusRow.id == row_id).limit(1)
+    )
+    if not row:
+        return None
+
+    old_status = (row.status or "").strip()
+    status_alterado_manualmente = False
+    novo_status_manual = ""
+
+    allowed = {
+        "data",
+        "valor_extrato",
+        "favorecido_descricao",
+        "ref_sigra",
+        "observacao",
+        "status",
+        "direcao_movimento",
+    }
+    for key, value in payload.items():
+        if key not in allowed or value is None:
+            continue
+        if key == "valor_extrato":
+            setattr(row, key, _float_or_zero(value))
+        elif key == "direcao_movimento":
+            direcao = str(value).strip().lower()
+            if direcao in {"entrada", "saida", "saída"}:
+                row.direcao_movimento = "saida" if direcao == "saída" else direcao
+            elif direcao == "":
+                row.direcao_movimento = ""
+        elif key == "status":
+            status = str(value).strip()
+            if status in {"✅ Conciliado", "❌ Pendente"} and status != old_status:
+                row.status = status
+                status_alterado_manualmente = True
+                novo_status_manual = status
+            elif status in {"✅ Conciliado", "❌ Pendente"}:
+                row.status = status
+        else:
+            setattr(row, key, str(value).strip())
+
+    if status_alterado_manualmente and "observacao" not in payload:
+        if novo_status_manual == "✅ Conciliado":
+            row.observacao = "Conciliado manualmente"
+        elif novo_status_manual == "❌ Pendente":
+            row.observacao = "Pendente manualmente"
+
+    row.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    _recalculate_run_metrics(db, run_id)
+    return row
 
 
 def _ingest_run_output(db: Session, run: ReconciliationRun) -> None:
@@ -141,6 +338,8 @@ def _ingest_run_output(db: Session, run: ReconciliationRun) -> None:
         except Exception:
             pass
 
+    extrato_direcao_map = _build_extrato_direcao_map(output, xl)
+
     status_counter = Counter()
     total_pendentes = 0
     status_sheets = [s for s in xl.sheet_names if "status" in s.lower()]
@@ -155,11 +354,23 @@ def _ingest_run_output(db: Session, run: ReconciliationRun) -> None:
                 status_counter[status_val] += 1
                 if "Pendente" in status_val:
                     total_pendentes += 1
+            extrato_id = _str_or_empty(row.get("ID Extrato", ""))
+            descricao = _str_or_empty(row.get("Favorecido/Descrição", ""))
+            direcao = _infer_direcao_movimento(
+                excel_direcao=_str_or_empty(
+                    _first_non_empty(row, ["Direção", "Direcao", "Tipo", "Natureza", "Inf.", "Inf"], "")
+                ),
+                descricao=descricao,
+                valor_raw=row.get("Valor Extrato", 0),
+            )
+            if not direcao and extrato_id:
+                direcao = extrato_direcao_map.get(extrato_id, "")
+
             db.add(
                 RunStatusRow(
                     run_id=run.id,
                     sheet_name=sheet,
-                    extrato_id=_str_or_empty(row.get("ID Extrato", "")),
+                    extrato_id=extrato_id,
                     aba_extrato=_str_or_empty(row.get("Aba Extrato", "")),
                     data=_str_or_empty(row.get("Data", "")),
                     valor_extrato=_float_or_zero(row.get("Valor Extrato", 0)),
@@ -170,7 +381,7 @@ def _ingest_run_output(db: Session, run: ReconciliationRun) -> None:
                             0,
                         )
                     ),
-                    favorecido_descricao=_str_or_empty(row.get("Favorecido/Descrição", "")),
+                    favorecido_descricao=descricao,
                     status=status_val,
                     qtd_comprovantes=int(_float_or_zero(row.get("Qtd Comprovantes", 0))),
                     valor_total_conciliado=_float_or_zero(row.get("Valor Total Conciliado", 0)),
@@ -178,6 +389,7 @@ def _ingest_run_output(db: Session, run: ReconciliationRun) -> None:
                     ref_sigra=_str_or_empty(row.get("Ref. Sigra", "")),
                     cliente=_str_or_empty(row.get("Cliente", "")),
                     observacao=_str_or_empty(row.get("Observação", "")),
+                    direcao_movimento=direcao,
                 )
             )
         db.commit()

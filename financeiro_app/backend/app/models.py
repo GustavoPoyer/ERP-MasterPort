@@ -87,7 +87,13 @@ class RunStatusRow(Base):
     ref_sigra: Mapped[str] = mapped_column(String(180), default="")
     cliente: Mapped[str] = mapped_column(String(180), default="")
     observacao: Mapped[str] = mapped_column(Text, default="")
+    direcao_movimento: Mapped[str] = mapped_column(String(20), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
 
 
 class AppUser(Base):

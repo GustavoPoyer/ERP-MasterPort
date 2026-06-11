@@ -11,9 +11,16 @@ from sqlalchemy.orm import Session
 from ..automations.registry import get_automation, validate_uploaded_filenames, validate_uploaded_slots
 from ..db import get_db
 from ..models import FinanceAccount, ReconciliationRun, RunMatchRow, RunMetric, RunStatusRow
-from ..schemas import RunCreate, RunDatasetRead, RunRead
+from ..schemas import RunCreate, RunDatasetRead, RunRead, RunStatusRowRead, RunStatusRowUpdate
 from ..services.account_service import account_name_map, get_active_account
-from ..services.run_service import cleanup_temp_dir, create_run, create_temp_run_dir, execute_run, resolve_run_output_file
+from ..services.run_service import (
+    cleanup_temp_dir,
+    create_run,
+    create_temp_run_dir,
+    execute_run,
+    resolve_run_output_file,
+    update_status_row,
+)
 from ..services.auth_service import require_sector
 
 
@@ -258,6 +265,24 @@ def get_run_dataset(run_id: int, db: Session = Depends(get_db), _: object = Depe
         )
     )
     return RunDatasetRead(metric=metric, matches=matches, statuses=statuses)
+
+
+@router.patch("/{run_id}/status-rows/{row_id}", response_model=RunStatusRowRead)
+def patch_run_status_row(
+    run_id: int,
+    row_id: int,
+    payload: RunStatusRowUpdate,
+    db: Session = Depends(get_db),
+    _: object = Depends(require_sector("financeiro")),
+):
+    run = db.get(ReconciliationRun, run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Execução não encontrada.")
+
+    updated = update_status_row(db, run_id, row_id, payload.model_dump(exclude_unset=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Linha de status não encontrada.")
+    return updated
 
 
 @router.delete("/{run_id}")

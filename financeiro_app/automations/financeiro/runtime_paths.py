@@ -56,3 +56,31 @@ def resolve_bb_output_path(
         else:
             explicit = str(Path(root) / "output" / "conciliacoes" / "conciliacao_bb_final.xlsx")
     return ensure_parent_dir(os.path.abspath(explicit))
+
+
+def resolve_itau_output_path(
+    *,
+    app_root: str | None = None,
+    run_id: int | None = None,
+    parameter_path: str | None = None,
+    account_slug: str = "",
+) -> str:
+    explicit = os.environ.get("ITAU_OUTPUT_PATH", "").strip()
+    if not explicit and parameter_path:
+        explicit = parameter_path.strip()
+    root = app_root or financeiro_app_root()
+    if not explicit:
+        slug_suffix = f"_{account_slug}" if account_slug else ""
+        if run_id is not None:
+            explicit = str(
+                Path(root)
+                / "output"
+                / "runs"
+                / f"run_{run_id}"
+                / f"conciliacao_itau_sigra{slug_suffix}.xlsx"
+            )
+        else:
+            explicit = str(
+                Path(root) / "output" / "conciliacoes" / "conciliacao_itau_sigra.xlsx"
+            )
+    return ensure_parent_dir(os.path.abspath(explicit))

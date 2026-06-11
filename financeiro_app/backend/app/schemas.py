@@ -161,6 +161,7 @@ class RunMatchRowRead(BaseModel):
 
 
 class RunStatusRowRead(BaseModel):
+    id: int
     sheet_name: str
     extrato_id: str
     aba_extrato: str = ""
@@ -175,9 +176,20 @@ class RunStatusRowRead(BaseModel):
     ref_sigra: str
     cliente: str
     observacao: str
+    direcao_movimento: str = ""
 
     class Config:
         from_attributes = True
+
+
+class RunStatusRowUpdate(BaseModel):
+    data: str | None = None
+    valor_extrato: float | None = None
+    favorecido_descricao: str | None = None
+    ref_sigra: str | None = None
+    observacao: str | None = None
+    status: str | None = None
+    direcao_movimento: str | None = None
 
 
 class RunDatasetRead(BaseModel):

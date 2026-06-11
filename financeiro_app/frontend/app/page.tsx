@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { KivoAssistant } from "../components/KivoAssistant";
 import { KivoRobot } from "../components/KivoRobot";
@@ -61,6 +61,7 @@ type MatchRow = {
 };
 
 type StatusRow = {
+  id: number;
   sheet_name: string;
   extrato_id: string;
   aba_extrato?: string;
@@ -75,6 +76,7 @@ type StatusRow = {
   ref_sigra: string;
   cliente: string;
   observacao: string;
+  direcao_movimento?: string;
 };
 
 type RunDataset = {
@@ -366,6 +368,117 @@ function statusClass(status: string): string {
   return "status-pill status-queued";
 }
 
+const STATUS_CONCILIADO = "✅ Conciliado";
+const STATUS_PENDENTE = "❌ Pendente";
+
+function normalizeConciliationStatus(status: string): string {
+  const value = (status || "").toLowerCase();
+  if (value.includes("conciliado")) return STATUS_CONCILIADO;
+  if (value.includes("pendente")) return STATUS_PENDENTE;
+  return status || STATUS_PENDENTE;
+}
+
+function inferDirecaoMovimento(row: StatusRow): "entrada" | "saida" | "" {
+  const explicit = (row.direcao_movimento || "").trim().toLowerCase();
+  if (explicit === "entrada" || explicit === "saida") {
+    return explicit;
+  }
+  const desc = (row.favorecido_descricao || "").toUpperCase();
+  if (/(RECEBIMENTO|RECEBIDO|CREDITO|CRÉDITO|PIX RECEBIDO)/.test(desc)) return "entrada";
+  if (/(PAGAMENTO|ENVIADO|DEBITO|DÉBITO|SISPAG|PUCOMEX|AFRMM|TARIFA|IOF)/.test(desc)) return "saida";
+  return "";
+}
+
+function parseValorInput(value: string): number {
+  const cleaned = value.replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatValorInput(value: number): string {
+  return Number(value || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function ConciliacaoStatusPicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const normalized = normalizeConciliationStatus(value);
+  const isConciliado = normalized === STATUS_CONCILIADO;
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [open]);
+
+  function selectOption(next: string) {
+    setOpen(false);
+    if (next !== normalized) {
+      onChange(next);
+    }
+  }
+
+  return (
+    <div ref={rootRef} className={`conciliacao-status-picker${open ? " is-open" : ""}`}>
+      <button
+        type="button"
+        className={`conciliacao-status-trigger ${
+          isConciliado ? "conciliacao-status-select--conciliado" : "conciliacao-status-select--pendente"
+        }`}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          if (!disabled) setOpen((current) => !current);
+        }}
+      >
+        <span>{normalized}</span>
+        <span className="conciliacao-status-trigger-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="conciliacao-status-menu" role="listbox">
+          <button
+            type="button"
+            className="conciliacao-status-option"
+            role="option"
+            aria-selected={isConciliado}
+            onClick={() => selectOption(STATUS_CONCILIADO)}
+          >
+            {STATUS_CONCILIADO}
+          </button>
+          <button
+            type="button"
+            className="conciliacao-status-option"
+            role="option"
+            aria-selected={!isConciliado}
+            onClick={() => selectOption(STATUS_PENDENTE)}
+          >
+            {STATUS_PENDENTE}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const EXTRATO_TAB_MONTH_ORDER = [
   "janeiro",
   "fevereiro",
@@ -629,6 +742,8 @@ export default function HomePage() {
   });
   const [dataset, setDataset] = useState<RunDataset | null>(null);
   const [datasetError, setDatasetError] = useState("");
+  const [statusEditError, setStatusEditError] = useState("");
+  const [statusRowSaving, setStatusRowSaving] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [runsRefreshing, setRunsRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -1406,6 +1521,37 @@ export default function HomePage() {
     if (!res.ok) return;
     const data = (await res.json()) as Run;
     setLiveRun(data);
+  }
+
+  async function patchStatusRow(rowId: number, patch: Partial<StatusRow>) {
+    if (!selectedRun?.id || isSelectedRunActive) return;
+    setStatusEditError("");
+    setStatusRowSaving((prev) => ({ ...prev, [rowId]: true }));
+    try {
+      const res = await apiFetch(`/runs/${selectedRun.id}/status-rows/${rowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        const detail = typeof payload?.detail === "string" ? payload.detail : "Não foi possível salvar a linha.";
+        throw new Error(detail);
+      }
+      const updated = (await res.json()) as StatusRow;
+      setDataset((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          statuses: prev.statuses.map((row) => (row.id === rowId ? { ...row, ...updated } : row)),
+        };
+      });
+      await loadDataset(selectedRun.id, selectedRun.status);
+    } catch (e) {
+      setStatusEditError(e instanceof Error ? e.message : "Erro ao salvar alteração.");
+    } finally {
+      setStatusRowSaving((prev) => ({ ...prev, [rowId]: false }));
+    }
   }
 
   async function loadDataset(runId: number, runStatus?: string) {
@@ -3138,10 +3284,12 @@ export default function HomePage() {
                   />
                 </div>
                 <p className="subtitle" style={{ marginBottom: 8 }}>
-                  Mostrando {sortedStatuses.length} linha(s) na visão atual.
+                  Mostrando {sortedStatuses.length} linha(s) na visão atual. Edite os campos diretamente na tabela;
+                  as alterações são salvas automaticamente.
                 </p>
+                {statusEditError && <p className="error">{statusEditError}</p>}
                 <div className="table-wrapper table-wrapper--scroll planilha-table-scroll">
-                  <table>
+                  <table className="conciliacao-edit-table">
                     <thead>
                       <tr>
                         {bankView === "bb" && <th>Aba extrato</th>}
@@ -3163,27 +3311,123 @@ export default function HomePage() {
                         </th>
                         <th>Ref. Sigra</th>
                         <th>Status</th>
+                        <th>Observação</th>
                         <th>Qtd Comp.</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedStatuses.map((s, idx) => (
-                        <tr key={`${s.sheet_name}-${s.extrato_id}-${s.aba_extrato ?? ""}-${idx}`}>
-                          {bankView === "bb" && (
-                            <td>{s.aba_extrato ? extratoTabLabelFromKey(extratoTabKeyFromRow(s)) : "-"}</td>
-                          )}
-                          <td>{s.extrato_id}</td>
-                          <td>{s.data}</td>
-                          <td>{s.favorecido_descricao}</td>
-                          <td>{s.valor_extrato.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-                          <td>{s.ref_sigra || "-"}</td>
-                          <td>{s.status}</td>
-                          <td>{s.qtd_comprovantes}</td>
-                        </tr>
-                      ))}
+                      {sortedStatuses.map((s, idx) => {
+                        const direcao = inferDirecaoMovimento(s);
+                        const rowBusy = Boolean(statusRowSaving[s.id]);
+                        const canEdit = Boolean(s.id) && !isSelectedRunActive;
+                        return (
+                          <tr
+                            key={
+                              s.id
+                                ? `status-${s.id}-${s.data}-${s.valor_extrato}-${s.status}-${s.direcao_movimento ?? ""}-${s.observacao}-${s.favorecido_descricao}`
+                                : `${s.sheet_name}-${s.extrato_id}-${s.aba_extrato ?? ""}-${idx}`
+                            }
+                            className={rowBusy ? "conciliacao-row-saving" : undefined}
+                          >
+                            {bankView === "bb" && (
+                              <td>{s.aba_extrato ? extratoTabLabelFromKey(extratoTabKeyFromRow(s)) : "-"}</td>
+                            )}
+                            <td>{s.extrato_id}</td>
+                            <td>
+                              <input
+                                className="conciliacao-cell-input conciliacao-cell-input--date"
+                                defaultValue={s.data}
+                                disabled={!canEdit}
+                                onBlur={(e) => {
+                                  if (!canEdit || e.target.value === s.data) return;
+                                  patchStatusRow(s.id, { data: e.target.value });
+                                }}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                className="conciliacao-cell-input"
+                                defaultValue={s.favorecido_descricao}
+                                disabled={!canEdit}
+                                onBlur={(e) => {
+                                  if (!canEdit || e.target.value === s.favorecido_descricao) return;
+                                  patchStatusRow(s.id, { favorecido_descricao: e.target.value });
+                                }}
+                              />
+                            </td>
+                            <td>
+                              <div className="conciliacao-valor-cell">
+                                <button
+                                  type="button"
+                                  className={`conciliacao-direcao-btn conciliacao-direcao-btn--${direcao || "neutro"}`}
+                                  title={
+                                    direcao === "entrada"
+                                      ? "Entrou na conta (clique para alternar)"
+                                      : direcao === "saida"
+                                        ? "Saiu da conta (clique para alternar)"
+                                        : "Definir se entrou ou saiu"
+                                  }
+                                  disabled={!canEdit}
+                                  onClick={() => {
+                                    if (!canEdit) return;
+                                    const next = direcao === "entrada" ? "saida" : "entrada";
+                                    patchStatusRow(s.id, { direcao_movimento: next });
+                                  }}
+                                >
+                                  {direcao === "entrada" ? "↑" : direcao === "saida" ? "↓" : "↕"}
+                                </button>
+                                <input
+                                  className="conciliacao-cell-input conciliacao-cell-input--valor"
+                                  defaultValue={formatValorInput(s.valor_extrato)}
+                                  disabled={!canEdit}
+                                  onBlur={(e) => {
+                                    if (!canEdit) return;
+                                    const nextValor = parseValorInput(e.target.value);
+                                    if (nextValor === Number(s.valor_extrato || 0)) return;
+                                    patchStatusRow(s.id, { valor_extrato: nextValor });
+                                  }}
+                                />
+                              </div>
+                            </td>
+                            <td>
+                              <input
+                                className="conciliacao-cell-input"
+                                defaultValue={s.ref_sigra === "-" ? "" : s.ref_sigra}
+                                disabled={!canEdit}
+                                placeholder="-"
+                                onBlur={(e) => {
+                                  if (!canEdit) return;
+                                  const nextRef = e.target.value.trim() || "-";
+                                  if (nextRef === (s.ref_sigra || "-")) return;
+                                  patchStatusRow(s.id, { ref_sigra: nextRef });
+                                }}
+                              />
+                            </td>
+                            <td>
+                              <ConciliacaoStatusPicker
+                                value={s.status}
+                                disabled={!canEdit}
+                                onChange={(next) => patchStatusRow(s.id, { status: next })}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                className="conciliacao-cell-input"
+                                defaultValue={s.observacao}
+                                disabled={!canEdit}
+                                onBlur={(e) => {
+                                  if (!canEdit || e.target.value === (s.observacao || "")) return;
+                                  patchStatusRow(s.id, { observacao: e.target.value });
+                                }}
+                              />
+                            </td>
+                            <td>{s.qtd_comprovantes}</td>
+                          </tr>
+                        );
+                      })}
                       {sortedStatuses.length === 0 && (
                         <tr>
-                          <td colSpan={bankView === "bb" ? 8 : 7}>Sem linhas para os filtros selecionados.</td>
+                          <td colSpan={bankView === "bb" ? 9 : 8}>Sem linhas para os filtros selecionados.</td>
                         </tr>
                       )}
                     </tbody>

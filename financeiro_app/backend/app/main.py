@@ -55,6 +55,30 @@ def ensure_schema_compatibility() -> None:
             if "aba_extrato" not in current_columns:
                 conn.execute(text(f"ALTER TABLE run_status_rows ADD COLUMN aba_extrato {text_type} NOT NULL DEFAULT ''"))
 
+            if "direcao_movimento" not in current_columns:
+                conn.execute(
+                    text("ALTER TABLE run_status_rows ADD COLUMN direcao_movimento VARCHAR(20) NOT NULL DEFAULT ''")
+                )
+
+            if "updated_at" not in current_columns:
+                if dialect in {"postgresql", "postgres"}:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE run_status_rows ADD COLUMN updated_at TIMESTAMP "
+                            "NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                        )
+                    )
+                else:
+                    # SQLite não aceita DEFAULT CURRENT_TIMESTAMP em ALTER TABLE.
+                    conn.execute(text("ALTER TABLE run_status_rows ADD COLUMN updated_at DATETIME"))
+                    conn.execute(
+                        text(
+                            "UPDATE run_status_rows "
+                            "SET updated_at = COALESCE(created_at, datetime('now')) "
+                            "WHERE updated_at IS NULL"
+                        )
+                    )
+
         if "app_users" in table_names:
             user_columns = {col["name"] for col in inspector.get_columns("app_users")}
             if "approval_status" not in user_columns:
