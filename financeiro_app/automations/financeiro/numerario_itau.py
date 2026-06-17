@@ -156,9 +156,9 @@ SIGRA_LOGIN_URL = 'https://app.sigraweb.com/#/login'
 # XPath informado pelo usuário para o campo de busca (header)
 XPATH_BUSCA_SIGRA = '/html/body/div[1]/header/div[1]/div[1]/form/input'
 
-# Login Sigra (variáveis de ambiente SIGRA_EMAIL / SIGRA_PASSWORD têm prioridade)
-SIGRA_EMAIL_PADRAO = 'gustavo.poyer@masterportcomex.com.br'
-SIGRA_SENHA_PADRAO = 'Lele245328'
+# Login Sigra (variáveis de ambiente SIGRA_EMAIL / SIGRA_PASSWORD)
+SIGRA_EMAIL_PADRAO = ''
+SIGRA_SENHA_PADRAO = ''
 
 
 def _resolver_credenciais_sigra(

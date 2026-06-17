@@ -5,7 +5,9 @@ import Image from "next/image";
 import { KivoAssistant } from "../components/KivoAssistant";
 import { KivoRobot } from "../components/KivoRobot";
 import { AutomationClientAccessPanel } from "../components/AutomationClientAccessPanel";
+import { AutomationQueueModule } from "../components/AutomationQueueModule";
 import { OperacoesPanel } from "../components/OperacoesPanel";
+import { PedroKanban } from "../components/PedroKanban";
 import { RhModule, RH_VIEW_LABELS, type RhView } from "../components/RhModule";
 
 type AutomationInfo = {
@@ -94,7 +96,7 @@ type DocumentSlot = {
 };
 
 type SectorKey = "financeiro" | "pedro" | "rh" | "operacoes";
-type PlatformView = "inicio" | "configuracoes" | SectorKey;
+type PlatformView = "inicio" | "configuracoes" | "fila" | SectorKey;
 type OperationsView = "importacao" | "exportacao";
 type AuthUser = {
   id: number;
@@ -158,9 +160,11 @@ const SLOT_CONFIG: Record<string, DocumentSlot[]> = {
   ],
 };
 
+const FILA_NAV = { key: "fila" as const, label: "Fila", subtitle: "Solicitações de automação" };
+
 const SECTOR_MENU: { key: SectorKey; label: string; subtitle: string }[] = [
   { key: "financeiro", label: "Financeiro", subtitle: "Conciliações e caixa" },
-  { key: "pedro", label: "Pedro", subtitle: "F/ Alinhamento" },
+  { key: "pedro", label: "Importação", subtitle: "Processos SigraWeb" },
   { key: "rh", label: "RH", subtitle: "Pessoal e folha" },
   { key: "operacoes", label: "Operações", subtitle: "Rotinas internas" },
 ];
@@ -187,8 +191,9 @@ const LANDING_SHOWCASE = [
 function platformPageTitle(view: PlatformView): string {
   if (view === "inicio") return "Início";
   if (view === "configuracoes") return "Configurações";
+  if (view === "fila") return "Fila de Automações";
   if (view === "financeiro") return "Setor Financeiro";
-  if (view === "pedro") return "Setor Pedro";
+  if (view === "pedro") return "Importação";
   if (view === "rh") return "RH";
   return "Setor de Operações";
 }
@@ -196,6 +201,7 @@ function platformPageTitle(view: PlatformView): string {
 function platformPageSubtitle(view: PlatformView): string {
   if (view === "inicio") return "Visão geral da plataforma KIVO";
   if (view === "configuracoes") return "Conta, segurança e preferências do ambiente";
+  if (view === "fila") return FILA_NAV.subtitle;
   return SECTOR_MENU.find((s) => s.key === view)?.subtitle ?? "";
 }
 
@@ -224,6 +230,13 @@ function resolvePlatformHeading(
   if (activeView === "configuracoes") {
     return { title: "Configurações", subtitle: platformPageSubtitle("configuracoes"), tag: "Sistema" };
   }
+  if (activeView === "fila") {
+    return {
+      title: "Fila de Automações",
+      subtitle: "Solicitações · acompanhamento em tempo real",
+      tag: "Central",
+    };
+  }
   if (activeView === "financeiro") {
     return {
       title: "Financeiro",
@@ -239,6 +252,13 @@ function resolvePlatformHeading(
     return {
       title: "Recursos Humanos",
       subtitle: RH_VIEW_LABELS[rhView],
+      tag: "Módulo ativo",
+    };
+  }
+  if (activeView === "pedro") {
+    return {
+      title: "Importação",
+      subtitle: "Processos de Importação · SigraWeb",
       tag: "Módulo ativo",
     };
   }
@@ -266,6 +286,12 @@ function resolveDocumentTitle(
   }
   if (activeView === "rh") {
     return `${RH_VIEW_LABELS[rhView]} — RH — KIVO`;
+  }
+  if (activeView === "pedro") {
+    return "Processos de Importação — Importação — KIVO";
+  }
+  if (activeView === "fila") {
+    return "Fila de Automações — KIVO";
   }
   return `${platformPageTitle(activeView)} — KIVO`;
 }
@@ -303,26 +329,6 @@ function parseApiErrorDetail(detail: unknown, fallback: string): string {
   return fallback;
 }
 
-function SettingsRailIcon() {
-  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
-  return (
-    <svg {...common}>
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6" />
-    </svg>
-  );
-}
-
-function HomeRailIcon() {
-  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
-  return (
-    <svg {...common}>
-      <path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 01-1.5 1.5H5.5A1.5 1.5 0 014 19v-8.5z" />
-      <path d="M9.5 20.5V13h5v7.5" />
-    </svg>
-  );
-}
-
 function SectorRailIcon({ sector }: { sector: SectorKey }) {
   const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
   if (sector === "financeiro") {
@@ -338,8 +344,9 @@ function SectorRailIcon({ sector }: { sector: SectorKey }) {
   if (sector === "pedro") {
     return (
       <svg {...common}>
-        <circle cx="12" cy="8" r="3.5" />
-        <path d="M5 20c0-3.5 3.1-6 7-6s7 2.5 7 6" />
+        <path d="M4 7h16v10H4z" />
+        <path d="M8 7V5h8v2" />
+        <path d="M9 12h6" />
       </svg>
     );
   }
@@ -1701,9 +1708,13 @@ export default function HomePage() {
       if (token) setAuthToken(token);
       const params = new URLSearchParams(window.location.search);
       const resetFromUrl = params.get("reset");
+      const viewFromUrl = params.get("view");
       if (resetFromUrl) {
         setResetToken(resetFromUrl);
         setGuestView("reset");
+        window.history.replaceState({}, "", window.location.pathname);
+      } else if (viewFromUrl === "fila" || viewFromUrl === "configuracoes") {
+        setActiveView(viewFromUrl);
         window.history.replaceState({}, "", window.location.pathname);
       }
     }
@@ -1853,6 +1864,11 @@ export default function HomePage() {
   useEffect(() => {
     const useConfigBg = Boolean(authToken) && activeView === "configuracoes";
     document.documentElement.setAttribute("data-kivo-bg", useConfigBg ? "config" : "degrade");
+    if (authToken) {
+      document.documentElement.setAttribute("data-kivo-layout", "fullscreen");
+    } else {
+      document.documentElement.removeAttribute("data-kivo-layout");
+    }
   }, [authToken, activeView]);
 
   const pageHeading = useMemo(
@@ -2340,67 +2356,6 @@ export default function HomePage() {
   return (
     <div className="platform-shell">
       <div className="platform-frame">
-        <aside className="platform-rail" aria-label="Navegação rápida">
-          <button
-            type="button"
-            className="platform-rail-logo-btn"
-            onClick={() => setActiveView("inicio")}
-            title="KIVO — Início"
-          >
-            <Image
-              src="/brand/kivo-logotipo.png"
-              alt="KIVO"
-              width={64}
-              height={18}
-              className="platform-rail-logo"
-            />
-          </button>
-          <nav className="platform-rail-nav">
-            <button
-              type="button"
-              className={`platform-rail-btn ${activeView === "inicio" ? "active" : ""}`}
-              onClick={() => setActiveView("inicio")}
-              title="Início"
-              aria-label="Início"
-            >
-              <HomeRailIcon />
-            </button>
-            {visibleSectors.map((sector) => (
-              <button
-                key={sector.key}
-                type="button"
-                className={`platform-rail-btn ${activeView === sector.key ? "active" : ""}`}
-                onClick={() => setActiveView(sector.key)}
-                title={`${sector.label} — ${sector.subtitle}`}
-                aria-label={sector.label}
-              >
-                <SectorRailIcon sector={sector.key} />
-              </button>
-            ))}
-          </nav>
-          <button
-            type="button"
-            className={`platform-rail-btn platform-rail-btn--settings ${activeView === "configuracoes" ? "active" : ""}`}
-            onClick={() => setActiveView("configuracoes")}
-            title={
-              pendingCount > 0
-                ? `Configurações (${pendingCount} cadastro${pendingCount === 1 ? "" : "s"} pendente${pendingCount === 1 ? "" : "s"})`
-                : "Configurações"
-            }
-            aria-label="Configurações"
-          >
-            <SettingsRailIcon />
-            {currentUser.role === "admin" && pendingCount > 0 && (
-              <span className="platform-nav-badge" aria-hidden="true">
-                {pendingCount > 9 ? "9+" : pendingCount}
-              </span>
-            )}
-          </button>
-          <div className="platform-rail-avatar" title={`${currentUser.username} (${currentUser.role})`}>
-            {currentUser.username.charAt(0).toUpperCase()}
-          </div>
-        </aside>
-
         <div className="platform-dashboard-wrap">
           <div
             className={`platform-dashboard${
@@ -2414,7 +2369,11 @@ export default function HomePage() {
                       ? " platform-dashboard--centered platform-dashboard--operacoes"
                       : activeView === "rh"
                         ? " platform-dashboard--rh"
-                        : " platform-dashboard--centered platform-dashboard--module"
+                        : activeView === "pedro"
+                          ? " platform-dashboard--pedro"
+                          : activeView === "fila"
+                            ? " platform-dashboard--fila"
+                            : " platform-dashboard--centered platform-dashboard--module"
             }`}
           >
             <header className="platform-page-header platform-page-header--animate">
@@ -2438,8 +2397,7 @@ export default function HomePage() {
                   </span>
                 </h2>
                 <p className="platform-home-lead">
-                  Escolha um setor para começar. Você também pode usar a barra lateral ou a navegação
-                  inferior.
+                  Escolha um setor para começar. Use a navegação inferior para trocar de módulo.
                 </p>
               </div>
               <div className="platform-home-hero-mascot" aria-hidden="true">
@@ -2475,6 +2433,26 @@ export default function HomePage() {
                   </span>
                 </button>
               ))}
+              <button
+                type="button"
+                className="platform-home-module platform-home-module--fila"
+                onClick={() => setActiveView("fila")}
+              >
+                <span className="platform-home-module-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                    <path d="M5 6h14v12H5z" />
+                    <path d="M8 10h8M8 14h5" />
+                    <path d="M9 6V4h6v2" />
+                  </svg>
+                </span>
+                <span className="platform-home-module-body">
+                  <strong>{FILA_NAV.label}</strong>
+                  <span className="platform-home-module-desc">{FILA_NAV.subtitle}</span>
+                </span>
+                <span className="platform-home-module-arrow" aria-hidden="true">
+                  →
+                </span>
+              </button>
             </div>
 
             <p className="platform-home-assistant-hint">
@@ -2855,6 +2833,18 @@ export default function HomePage() {
           </section>
         ) : activeView === "rh" ? (
           authToken ? <RhModule apiBase={API_BASE} authToken={authToken} /> : null
+        ) : activeView === "pedro" ? (
+          authToken ? <PedroKanban apiBase={API_BASE} authToken={authToken} /> : null
+        ) : activeView === "fila" ? (
+          authToken ? (
+            <AutomationQueueModule
+              apiBase={API_BASE}
+              authToken={authToken}
+              username={currentUser.username}
+              userSector={currentUser.sector}
+              isAdmin={currentUser.role === "admin"}
+            />
+          ) : null
         ) : activeView !== "financeiro" ? (
           <section className="panel platform-sector-empty">
             <h2>{SECTOR_MENU.find((item) => item.key === activeView)?.label} em breve</h2>
@@ -3585,6 +3575,13 @@ export default function HomePage() {
                   {sector.label}
                 </button>
               ))}
+              <button
+                type="button"
+                className={`platform-nav-pill ${activeView === "fila" ? "active" : ""}`}
+                onClick={() => setActiveView("fila")}
+              >
+                {FILA_NAV.label}
+              </button>
               <span className="platform-bottomnav-divider" aria-hidden="true" />
               <button
                 type="button"

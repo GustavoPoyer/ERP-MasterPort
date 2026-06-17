@@ -7,7 +7,7 @@ from sqlalchemy import inspect, text
 
 from .config import settings
 from .db import Base, SessionLocal, engine
-from .routers import accounts, auth, automation_clients, automations, rh, runs, sector_automations, sector_runs
+from .routers import accounts, auth, automation_clients, automations, fila, pedro, rh, runs, sector_automations, sector_runs
 from .services.account_service import backfill_run_accounts, ensure_default_accounts
 from .services.auth_service import (
     cleanup_expired_password_resets,
@@ -86,6 +86,15 @@ def ensure_schema_compatibility() -> None:
                     text("ALTER TABLE app_users ADD COLUMN approval_status VARCHAR(30) NOT NULL DEFAULT 'approved'")
                 )
                 conn.execute(text("UPDATE app_users SET approval_status = 'approved' WHERE approval_status IS NULL"))
+            if "contact_email" not in user_columns:
+                conn.execute(text("ALTER TABLE app_users ADD COLUMN contact_email VARCHAR(180) NOT NULL DEFAULT ''"))
+
+        if "automation_queue_tickets" in table_names:
+            ticket_columns = {col["name"] for col in inspector.get_columns("automation_queue_tickets")}
+            if "requester_email" not in ticket_columns:
+                conn.execute(
+                    text("ALTER TABLE automation_queue_tickets ADD COLUMN requester_email VARCHAR(180) NOT NULL DEFAULT ''")
+                )
 
         if "rh_calendar_events" in table_names:
             event_columns = {col["name"] for col in inspector.get_columns("rh_calendar_events")}
@@ -147,6 +156,8 @@ app.include_router(accounts.router)
 app.include_router(runs.router)
 app.include_router(auth.router)
 app.include_router(rh.router)
+app.include_router(pedro.router)
+app.include_router(fila.router)
 app.include_router(automation_clients.router)
 app.include_router(sector_automations.router)
 app.include_router(sector_runs.router)

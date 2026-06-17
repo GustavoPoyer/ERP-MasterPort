@@ -3,6 +3,7 @@ uvicorn[standard]
 sqlalchemy
 psycopg[binary]
 python-multipart
+python-dotenv
 pandas
 openpyxl
 pypdf
