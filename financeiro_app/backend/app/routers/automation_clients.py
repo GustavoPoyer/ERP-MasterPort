@@ -12,7 +12,12 @@ from ..schemas import (
     UserClientAccessUpdate,
 )
 from ..services.auth_service import require_admin, require_current_user
-from ..services.automation_access import list_user_client_access, normalize_slug
+from ..services.automation_access import (
+    has_explicit_client_restrictions,
+    list_user_client_access,
+    normalize_slug,
+    user_client_slugs,
+)
 from ..services.automation_catalog import list_automation_clients, slugify_key
 
 router = APIRouter(prefix="/automation-clients", tags=["automation-clients"])
@@ -38,7 +43,13 @@ def list_clients(
     if user.role != "admin" and user.sector != sector_norm:
         raise HTTPException(status_code=403, detail="Acesso restrito a este setor.")
 
-    return list_automation_clients(db, sector=sector_norm, flow=flow, active_only=not include_inactive)
+    rows = list_automation_clients(db, sector=sector_norm, flow=flow, active_only=not include_inactive)
+    if user.role == "admin":
+        return rows
+    if not has_explicit_client_restrictions(db, user.id):
+        return rows
+    allowed = user_client_slugs(db, user.id)
+    return [row for row in rows if row.slug in allowed]
 
 
 @router.get("/mine", response_model=list[AutomationClientRead])

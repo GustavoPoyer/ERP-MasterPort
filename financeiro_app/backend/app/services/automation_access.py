@@ -21,6 +21,23 @@ def user_client_slugs(db: Session, user_id: int) -> set[str]:
     return {slug for slug in rows}
 
 
+def has_explicit_client_restrictions(db: Session, user_id: int) -> bool:
+    """True quando o admin já salvou acesso a clientes (mesmo que a lista fique vazia)."""
+    row = db.scalar(select(UserClientAccess.id).where(UserClientAccess.user_id == user_id).limit(1))
+    return row is not None
+
+
+def can_view_client_slug(db: Session, user: AppUser, client_slug: str) -> bool:
+    slug = (client_slug or "").strip().lower()
+    if not slug:
+        return True
+    if user.role == "admin":
+        return True
+    if not has_explicit_client_restrictions(db, user.id):
+        return True
+    return slug in user_client_slugs(db, user.id)
+
+
 def can_view_automation(db: Session, user: AppUser, row: SectorAutomation) -> bool:
     if user.role == "admin":
         return True
@@ -42,10 +59,7 @@ def can_view_automation(db: Session, user: AppUser, row: SectorAutomation) -> bo
         return True
 
     if visibility == "client":
-        client_slug = (row.client_slug or "").strip().lower()
-        if not client_slug:
-            return True
-        return client_slug in user_client_slugs(db, user.id)
+        return can_view_client_slug(db, user, row.client_slug or "")
 
     return False
 

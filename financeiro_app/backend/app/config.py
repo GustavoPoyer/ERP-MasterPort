@@ -36,6 +36,8 @@ class Settings:
     smtp_user: str = os.getenv("SMTP_USER", "").strip()
     smtp_password: str = os.getenv("SMTP_PASSWORD", "").strip()
     smtp_from: str = os.getenv("SMTP_FROM", "").strip()
+    smtp_from_name: str = os.getenv("SMTP_FROM_NAME", "KIVO Notificações").strip()
+    smtp_reply_to: str = os.getenv("SMTP_REPLY_TO", "").strip()
     smtp_use_tls: bool = os.getenv("SMTP_USE_TLS", "true").strip().lower() == "true"
     admin_notify_emails: str = os.getenv("ADMIN_NOTIFY_EMAILS", "").strip()
     sigra_api_base_url: str = os.getenv("SIGRA_API_BASE_URL", "https://api.sigraweb.com").strip()

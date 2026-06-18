@@ -348,7 +348,11 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
       setError(await parseError(res, "Não foi possível criar o card."));
       return;
     }
-    setMessage("Automação cadastrada.");
+    setMessage(
+      draft.client_slug
+        ? "Automação cadastrada. Usuários do setor Operações enxergam este cliente; restrinja em Configurações → Acesso a clientes, se necessário."
+        : "Automação cadastrada.",
+    );
     setFormMode("none");
     if (draft.client_slug) setClientFilter(draft.client_slug);
     await reloadCards();
@@ -725,6 +729,16 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
                 Nenhum cliente nem automação em <b>{flowLabel}</b>.
               </p>
               {isAdmin && <p className="subtitle">Comece cadastrando um cliente, depois adicione automações.</p>}
+            </div>
+          )}
+
+          {!isAdmin && cards.length === 0 && (clients.length > 0 || clientFilter !== "all") && (
+            <div className="platform-operacoes-empty-state">
+              <p>Nenhuma automação disponível para o seu usuário nesta equipe.</p>
+              <p className="subtitle">
+                Peça ao administrador para confirmar seu setor como <b>Operações</b> e liberar o cliente correto em
+                Configurações → Acesso a clientes.
+              </p>
             </div>
           )}
         </div>

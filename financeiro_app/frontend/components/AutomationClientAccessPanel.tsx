@@ -107,7 +107,9 @@ export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccess
     <div className="platform-settings-admin-section">
       <h4>Acesso a clientes (Operações)</h4>
       <p className="platform-settings-block-desc">
-        Defina quais clientes cada usuário pode ver quando a automação tem visibilidade <b>cliente</b>.
+        Restringe quais clientes o usuário enxerga em automações com visibilidade <b>cliente</b>.
+        Se você nunca salvou aqui, o usuário do setor Operações vê todos os clientes. Ao marcar clientes e
+        salvar, o acesso fica limitado à seleção.
       </p>
 
       <form className="platform-settings-admin-reset-row" onSubmit={handleLookup}>

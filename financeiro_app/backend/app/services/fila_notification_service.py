@@ -1,10 +1,11 @@
+import html
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..config import settings
 from ..models import AppUser, AutomationQueueTicket
 from ..schemas_fila import SECTOR_LABELS, STATUS_LABELS
-from .email_service import _admin_recipients, send_email, smtp_available
+from .email_service import _admin_recipients, public_app_url, send_email, smtp_available
 
 
 def collect_fila_status_recipients(db: Session, ticket: AutomationQueueTicket) -> list[str]:
@@ -33,8 +34,8 @@ def _build_fila_status_email_body(
     changed_by: str,
     assigned_to: str,
     resolution_notes: str,
-) -> str:
-    fila_url = f"{settings.frontend_url}/?view=fila" if settings.frontend_url else "KIVO → Fila de Automações"
+) -> tuple[str, str]:
+    fila_url = public_app_url("/?view=fila")
     old_label = STATUS_LABELS.get(old_status, old_status)
     new_label = STATUS_LABELS.get(new_status, new_status)
     sector_label = SECTOR_LABELS.get(request_sector, request_sector)
@@ -52,8 +53,49 @@ def _build_fila_status_email_body(
         lines.append(f"Responsável técnico: {assigned_to}")
     if resolution_notes.strip():
         lines.extend(["", "Notas de resolução:", resolution_notes.strip()])
-    lines.extend(["", f"Acompanhe em: {fila_url}", ""])
-    return "\n".join(lines)
+    if fila_url:
+        lines.extend(["", f"Acompanhe em: {fila_url}", ""])
+    else:
+        lines.extend(["", "Acesse o KIVO → Fila de Automações para acompanhar.", ""])
+
+    text_body = "\n".join(lines)
+
+    html_rows = [
+        ("Chamado", f"#{ticket_id} — {title}"),
+        ("Solicitante", requester_username),
+        ("Setor", sector_label),
+        ("Status", f"{old_label} → {new_label}"),
+        ("Alterado por", changed_by),
+    ]
+    if assigned_to:
+        html_rows.append(("Responsável técnico", assigned_to))
+
+    table_rows = "".join(
+        f"<tr><td style='padding:4px 12px 4px 0;color:#555;'>{html.escape(label)}</td>"
+        f"<td style='padding:4px 0;'>{html.escape(value)}</td></tr>"
+        for label, value in html_rows
+    )
+    notes_html = ""
+    if resolution_notes.strip():
+        notes_html = (
+            "<p><strong>Notas de resolução:</strong><br>"
+            f"{html.escape(resolution_notes.strip()).replace(chr(10), '<br>')}</p>"
+        )
+    link_html = (
+        f'<p><a href="{html.escape(fila_url)}">Abrir Fila de Automações no KIVO</a></p>'
+        if fila_url
+        else "<p>Acesse o KIVO → Fila de Automações para acompanhar.</p>"
+    )
+    html_body = (
+        "<!DOCTYPE html><html><body style=\"font-family:Arial,sans-serif;color:#222;line-height:1.5;\">"
+        "<p>Atualização na <strong>Fila de Automações</strong> do KIVO.</p>"
+        f"<table style=\"border-collapse:collapse;margin:12px 0;\">{table_rows}</table>"
+        f"{notes_html}{link_html}"
+        "<p style=\"color:#888;font-size:12px;margin-top:24px;\">"
+        "Mensagem automática do KIVO. Não responda a este e-mail."
+        "</p></body></html>"
+    )
+    return text_body, html_body
 
 
 def send_fila_status_change_email(
@@ -72,7 +114,7 @@ def send_fila_status_change_email(
     if old_status == new_status or not smtp_available() or not recipients:
         return False
 
-    body = _build_fila_status_email_body(
+    body, html_body = _build_fila_status_email_body(
         ticket_id=ticket_id,
         title=title,
         requester_username=requester_username,
@@ -84,8 +126,8 @@ def send_fila_status_change_email(
         resolution_notes=resolution_notes,
     )
     new_label = STATUS_LABELS.get(new_status, new_status)
-    subject = f"[KIVO Fila #{ticket_id}] Status atualizado: {new_label}"
-    return send_email(recipients, subject, body)
+    subject = f"KIVO — Chamado #{ticket_id}: status atualizado para {new_label}"
+    return send_email(recipients, subject, body, html_body=html_body)
 
 
 def schedule_fila_status_change_email(
