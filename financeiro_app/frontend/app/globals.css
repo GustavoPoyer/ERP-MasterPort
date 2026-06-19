@@ -1931,11 +1931,13 @@ body > *:not(.kivo-bg-root) {
 }
 
 .platform-dashboard {
+  --kivo-pane-surface: rgba(22, 22, 26, 0.55);
+  --kivo-pane-loader-bg: rgba(22, 22, 26, 0.82);
   position: relative;
   z-index: 10;
   border: 1px solid var(--glass-border);
   border-radius: clamp(32px, 2.4vw, 42px);
-  background: rgba(22, 22, 26, 0.55);
+  background: var(--kivo-pane-surface);
   backdrop-filter: blur(28px) saturate(170%);
   -webkit-backdrop-filter: blur(28px) saturate(170%);
   box-shadow:
@@ -3658,6 +3660,10 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   background: rgba(0, 0, 0, 0.18);
 }
 
+.rh-table-hint {
+  display: none;
+}
+
 .app-shell--rh .rh-table-wrap table {
   width: 100%;
   min-width: 680px;
@@ -3708,6 +3714,134 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   gap: 6px;
   justify-content: flex-end;
   margin-left: auto;
+}
+
+@media (max-width: 768px) {
+  .app-shell--rh {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .app-shell--rh .rh-panel {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .app-shell--rh .rh-table-wrap {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .app-shell--rh .rh-table-wrap table {
+    width: max-content;
+    min-width: 720px;
+    table-layout: auto;
+  }
+
+  .app-shell--rh .rh-table-wrap--payroll table {
+    min-width: 680px;
+  }
+
+  .app-shell--rh .rh-table-wrap--vacations table {
+    min-width: 760px;
+  }
+
+  .app-shell--rh .rh-table-wrap th,
+  .app-shell--rh .rh-table-wrap td {
+    white-space: nowrap;
+    max-width: none;
+  }
+
+  .app-shell--rh .rh-table-wrap th:first-child,
+  .app-shell--rh .rh-table-wrap td:first-child {
+    white-space: normal;
+    min-width: 8.5rem;
+    max-width: 11rem;
+  }
+
+  .app-shell--rh .rh-table-wrap--vacations th:nth-child(5),
+  .app-shell--rh .rh-table-wrap--vacations td:nth-child(5) {
+    white-space: normal;
+    min-width: 7rem;
+    max-width: 11rem;
+  }
+
+  .app-shell--rh .rh-table-actions-col,
+  .app-shell--rh .rh-table-wrap td.rh-actions {
+    width: auto;
+    min-width: 8.5rem;
+    max-width: none;
+  }
+
+  .app-shell--rh .rh-status {
+    white-space: nowrap;
+  }
+
+  .rh-table-hint {
+    display: block;
+    margin: 8px 0 0;
+    font-size: 0.68rem;
+    color: #71717a;
+    text-align: center;
+  }
+
+  .rh-dash-stats-row {
+    grid-template-columns: 1fr;
+  }
+
+  .rh-dash-stat-value {
+    font-size: clamp(0.95rem, 4.2vw, 1.25rem);
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+
+  .rh-dash-hero-value {
+    font-size: clamp(1.2rem, 5.5vw, 1.75rem);
+    overflow-wrap: anywhere;
+    line-height: 1.1;
+  }
+
+  .rh-dash-card-value {
+    overflow-wrap: anywhere;
+  }
+
+  .rh-dash-month-picker {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 92%, transparent);
+  }
+
+  .rh-dash-month-picker::-webkit-scrollbar {
+    display: none;
+  }
+
+  .rh-dash-month-cell {
+    flex: 0 0 2.35rem;
+    min-width: 2.35rem;
+  }
+
+  .rh-dash-month-lbl {
+    font-size: 0.46rem;
+    letter-spacing: 0;
+  }
+
+  .rh-dash-month-bar-wrap {
+    height: 44px;
+  }
+
+  .rh-dash-month-bar {
+    max-width: 16px;
+  }
 }
 
 @media (max-width: 1080px) {
@@ -7485,31 +7619,12 @@ tr.clickable {
 
   .platform-frame {
     flex-direction: column;
-    align-items: center;
+    align-items: stretch;
     max-width: 100%;
     height: auto;
     max-height: none;
   }
-  .platform-rail {
-    flex-direction: row;
-    width: auto;
-    max-width: 100%;
-    padding: 8px 12px;
-    border-radius: 999px;
-  }
-  .platform-rail-nav {
-    flex-direction: row;
-    margin: 0 8px;
-  }
-  .platform-rail-logo {
-    width: min(100%, 56px);
-    max-height: 18px;
-  }
-  .platform-rail-avatar {
-    width: 34px;
-    height: 34px;
-    font-size: 0.75rem;
-  }
+
   .platform-dashboard {
     border-radius: 28px;
     padding: 18px 16px 64px;
@@ -7517,21 +7632,25 @@ tr.clickable {
     height: auto;
     min-height: min(520px, calc(100vh - 140px));
   }
+
   .platform-bottomnav {
     width: calc(100% - 16px);
     flex-wrap: wrap;
     justify-content: center;
     padding: 10px;
   }
+
   .platform-bottomnav-pills {
     justify-content: center;
     width: 100%;
   }
+
   .platform-bottomnav-actions {
     justify-content: center;
     width: 100%;
     margin-top: 6px;
   }
+
   .platform-home-hero {
     flex-direction: column;
     align-items: flex-start;

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { KivoLoader, waitMinLoaderTime } from "./KivoLoader";
 
 export type RhView = "overview" | "calendario" | "colaboradores" | "admissao" | "demissao" | "ferias" | "folha";
 
@@ -418,6 +419,7 @@ export function RhModule({ apiBase, authToken }: RhModuleProps) {
   );
 
   const loadRhData = useCallback(async () => {
+    const startedAt = Date.now();
     setLoading(true);
     setError("");
     try {
@@ -434,6 +436,7 @@ export function RhModule({ apiBase, authToken }: RhModuleProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar dados de RH.");
     } finally {
+      await waitMinLoaderTime(startedAt);
       setLoading(false);
     }
   }, [apiFetch, payrollMonth]);
@@ -946,9 +949,9 @@ export function RhModule({ apiBase, authToken }: RhModuleProps) {
 
       {error && <p className="error rh-error">{error}</p>}
       {loading && !dashboard ? (
-        <section className="panel rh-panel">
-          <p className="subtitle">Carregando dados de RH…</p>
-        </section>
+        <div className="module-pane-loading" role="status" aria-live="polite">
+          <KivoLoader size="md" showLabel label="Carregando dados de RH…" />
+        </div>
       ) : (
         <>
           {rhView === "overview" && dashboard && (
@@ -1543,6 +1546,7 @@ export function RhModule({ apiBase, authToken }: RhModuleProps) {
                   </tbody>
                 </table>
               </div>
+              <p className="rh-table-hint">Deslize para ver todas as colunas →</p>
             </section>
           )}
 
@@ -1850,6 +1854,7 @@ export function RhModule({ apiBase, authToken }: RhModuleProps) {
                   </tbody>
                 </table>
               </div>
+              <p className="rh-table-hint">Deslize para ver todas as colunas →</p>
             </section>
           )}
 
@@ -1917,6 +1922,7 @@ export function RhModule({ apiBase, authToken }: RhModuleProps) {
                   </tbody>
                 </table>
               </div>
+              <p className="rh-table-hint">Deslize para ver todas as colunas →</p>
             </section>
           )}
         </>

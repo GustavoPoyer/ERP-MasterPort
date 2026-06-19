@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { KivoLoader, waitMinLoaderTime } from "./KivoLoader";
 
 export type OperationsView = "importacao" | "exportacao";
 
@@ -78,6 +79,7 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
     let cancelled = false;
 
     async function loadAll() {
+      const startedAt = Date.now();
       setLoading(true);
       setError("");
       try {
@@ -102,7 +104,10 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
           setError(err instanceof Error ? err.message : "Erro ao carregar Operações.");
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          await waitMinLoaderTime(startedAt);
+          setLoading(false);
+        }
       }
     }
 
@@ -229,7 +234,11 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
 
       {error && <p className="error">{error}</p>}
       {message && <p className="info-note">{message}</p>}
-      {loading && <p className="subtitle">Carregando automações…</p>}
+      {loading && (
+        <div className="module-pane-loading module-pane-loading--compact" role="status" aria-live="polite">
+          <KivoLoader size="sm" showLabel label="Carregando automações…" />
+        </div>
+      )}
 
       {showForm && (
         <form className="panel platform-operacoes-form" onSubmit={handleCreateCard}>

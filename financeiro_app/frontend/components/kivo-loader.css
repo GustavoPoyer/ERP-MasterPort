@@ -1,0 +1,142 @@
+/* Loader KIVO — baseado em Uiverse.io por jack0237 (adaptado à marca) */
+
+.kivo-loader-wrap {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.kivo-loader-wrap--overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: var(--kivo-pane-loader-bg, rgba(22, 22, 26, 0.82));
+  backdrop-filter: blur(28px) saturate(170%);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+}
+
+.kivo-loader {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.08em;
+  font-family: var(--font-inter), "Segoe UI", Arial, sans-serif;
+  font-weight: 800;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  user-select: none;
+}
+
+.kivo-loader--sm {
+  font-size: 1.25rem;
+}
+
+.kivo-loader--md {
+  font-size: 1.75rem;
+}
+
+.kivo-loader--lg {
+  font-size: 2.5rem;
+}
+
+.kivo-loader-char {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  text-shadow: 0 0 24px rgba(255, 255, 255, 0.12);
+  animation: kivo-loader-jump-letter 0.8s ease-in-out infinite alternate;
+}
+
+.kivo-loader-o {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 0.92em;
+  height: 0.92em;
+  margin-inline-start: 0.06em;
+  margin-bottom: 0.06em;
+  border-radius: 50%;
+  border: 0.16em solid var(--kivo-accent, #d9f99d);
+  background: transparent;
+  box-sizing: border-box;
+  animation: kivo-loader-jump-o 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes kivo-loader-jump-letter {
+  100% {
+    color: #ffffff;
+    transform: translateY(-2.4rem) scale(1.12);
+    text-shadow: 0 8px 28px rgba(255, 255, 255, 0.2);
+  }
+}
+
+@keyframes kivo-loader-jump-o {
+  100% {
+    transform: translateY(-2.4rem) scale(1.35);
+    background: var(--kivo-accent, #d9f99d);
+    border-color: var(--kivo-accent-strong, #bef264);
+    box-shadow:
+      0 0 0 2px rgba(217, 249, 157, 0.25),
+      0 12px 32px rgba(217, 249, 157, 0.35);
+  }
+}
+
+.kivo-loader-char:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.kivo-loader-char:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.kivo-loader-char:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.kivo-loader-o {
+  animation-delay: 0.4s;
+}
+
+.kivo-loader-label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #a1a1aa;
+  letter-spacing: 0.02em;
+}
+
+.module-pane-loading {
+  flex: 1;
+  width: 100%;
+  min-height: min(360px, 48vh);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.module-pane-loading--compact {
+  min-height: min(220px, 32vh);
+}
+
+.app-shell--rh .module-pane-loading {
+  min-height: min(420px, 52vh);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kivo-loader-char,
+  .kivo-loader-o {
+    animation: kivo-loader-pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes kivo-loader-pulse {
+    50% {
+      opacity: 0.55;
+    }
+  }
+}

@@ -236,8 +236,67 @@
 
 /* Mobile */
 @media (max-width: 768px) {
+  html,
+  body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
+
+  html:has(.platform-shell),
+  html:has(.platform-shell) body {
+    height: 100%;
+    min-height: 100dvh;
+    overflow: hidden;
+  }
+
   .lp-shell {
     padding: 12px 12px 32px;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .lp-hero-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lp-module-grid,
+  .lp-flow-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .lp-login-card {
+    margin-left: 0;
+    max-width: none;
+    width: 100%;
+  }
+
+  .lp-showcase {
+    margin-top: 28px;
+    padding: 18px 12px 14px;
+    border-radius: 20px;
+    overflow: hidden;
+  }
+
+  .lp-showcase-tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .lp-showcase-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .lp-cta-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .lp-cta-row .lp-btn-primary,
+  .lp-cta-row .lp-btn-ghost {
+    width: 100%;
+    justify-content: center;
   }
 
   .lp-topbar {
@@ -281,38 +340,58 @@
   }
 
   .platform-shell {
-    padding: 8px 8px 16px;
+    padding: 0;
     min-height: 100dvh;
     align-items: stretch;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100vw;
   }
 
   :root {
     --kivo-frame-width: 100%;
-    --kivo-frame-height: calc(100dvh - 16px);
+    --kivo-frame-height: 100dvh;
+    --kivo-dash-pad-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
   }
 
   .platform-frame {
     width: 100%;
     max-width: 100%;
-    height: var(--kivo-frame-height);
-    min-height: var(--kivo-frame-height);
-    max-height: var(--kivo-frame-height);
+    height: 100dvh;
+    min-height: 100dvh;
+    max-height: 100dvh;
     gap: 0;
+    margin: 0;
   }
 
   .platform-rail {
-    display: none;
+    display: none !important;
   }
 
   .platform-dashboard-wrap {
     padding-bottom: 0;
+    overflow: hidden;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
   }
 
   .platform-dashboard {
-    border-radius: 18px;
-    padding: 14px 12px 58px;
-    min-height: calc(100dvh - 24px);
-    max-height: none;
+    border-radius: 0;
+    padding: 14px 12px var(--kivo-dash-pad-bottom);
+    min-height: 0;
+    max-height: 100%;
+    height: 100%;
+    flex: 1;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .platform-view-pane {
+    overflow-x: hidden;
+    overflow-y: visible;
+    min-height: min-content;
   }
 
   .platform-page-header {
@@ -326,15 +405,35 @@
 
   .platform-bottomnav {
     position: fixed;
-    left: 8px;
-    right: 8px;
-    bottom: 8px;
+    left: max(6px, env(safe-area-inset-left, 0px));
+    right: max(6px, env(safe-area-inset-right, 0px));
+    bottom: max(6px, env(safe-area-inset-bottom, 0px));
     transform: none;
     width: auto;
     max-width: none;
-    border-radius: 18px;
-    padding: 8px 6px;
+    border-radius: 16px;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
     z-index: 50;
+    min-height: 48px;
+    gap: 4px;
+  }
+
+  .platform-bottomnav-pills {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 14px), transparent);
+  }
+
+  .platform-bottomnav-pills::-webkit-scrollbar {
+    display: none;
+  }
+
+  .platform-bottomnav-actions {
+    flex-shrink: 0;
   }
 
   .platform-bottomnav-hint {
@@ -355,8 +454,166 @@
   }
 
   .platform-nav-pill {
-    padding: 8px 10px;
+    padding: 10px 12px;
+    font-size: 0.72rem;
+    min-height: 40px;
+  }
+
+  .module-subnav,
+  .rh-subnav {
+    width: 100%;
+    max-width: 100%;
+    margin-inline: 0;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    border-radius: 16px;
+    padding: 6px 8px;
+    mask-image: linear-gradient(90deg, #000 calc(100% - 18px), transparent);
+  }
+
+  .module-subnav::-webkit-scrollbar,
+  .rh-subnav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .module-subnav-btn {
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  .platform-operacoes-flows,
+  .platform-operacoes-flows--compact {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .platform-operacoes-automations-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .platform-operacoes-automations-head .platform-settings-approve-btn {
+    width: 100%;
+  }
+
+  .platform-operacoes-card-path-dir {
+    word-break: break-all;
     font-size: 0.68rem;
+  }
+
+  .platform-operacoes-card-title-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .finance-account-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .finance-account-tabs {
+    width: 100%;
+  }
+
+  .hero {
+    flex-direction: column;
+    padding: 14px;
+  }
+
+  .hero h1 {
+    font-size: 1.25rem;
+  }
+
+  .sector-nav {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .rh-dash-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .rh-dash-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .rh-dash-stats-row {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .rh-dash-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .rh-calendar-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .rh-employees-filter,
+  .rh-month-filter {
+    width: 100%;
+  }
+
+  .rh-calendar-grid {
+    gap: 3px;
+  }
+
+  .rh-calendar-day {
+    min-height: 48px;
+    padding: 4px;
+    border-radius: 8px;
+  }
+
+  .rh-calendar-day header {
+    font-size: 0.62rem;
+  }
+
+  .rh-calendar-pill {
+    font-size: 0.52rem;
+    padding: 2px 4px;
+    border-radius: 6px;
+  }
+
+  .rh-calendar-weekdays span {
+    font-size: 0.55rem;
+  }
+
+  .app-shell--rh .rh-table-hint {
+    margin: 8px 0 0;
+  }
+
+  .table-wrapper--scroll {
+    max-height: min(50dvh, 420px);
+    border-radius: 12px;
+  }
+
+  .table-wrapper--scroll table {
+    min-width: 640px;
+    font-size: 0.76rem;
+  }
+
+  .table-wrapper:not(.rh-table-wrap)::after {
+    content: "Deslize para ver mais →";
+    display: block;
+    margin-top: 6px;
+    font-size: 0.68rem;
+    color: #71717a;
+    text-align: center;
+  }
+
+  .table-wrapper:not(.rh-table-wrap):not(:has(table))::after {
+    display: none;
   }
 
   .kpi-grid {
@@ -480,6 +737,22 @@
 
 /* Celular pequeno */
 @media (max-width: 480px) {
+  .lp-hero-copy h1 {
+    font-size: clamp(1.35rem, 8vw, 1.75rem);
+  }
+
+  .lp-brand-logo {
+    height: 44px;
+  }
+
+  .platform-page-header .platform-title {
+    font-size: 1.05rem;
+  }
+
+  .platform-page-header .platform-subtitle {
+    font-size: 0.75rem;
+  }
+
   .kpi-grid {
     grid-template-columns: 1fr;
   }
@@ -494,16 +767,30 @@
 
   .platform-nav-pill {
     padding: 7px 8px;
-    font-size: 0.62rem;
+    font-size: 0.6rem;
+    min-height: 34px;
+  }
+
+  .platform-bottomnav-logout {
+    display: none;
+  }
+
+  .module-subnav-btn {
+    font-size: 0.68rem;
+    padding: 7px 10px;
   }
 
   .platform-settings-grid > article {
     padding: 12px;
   }
 
-  .table-wrapper table {
+  .table-wrapper:not(.rh-table-wrap) table {
+    min-width: 480px;
+    font-size: 0.74rem;
+  }
+
+  .table-wrapper--scroll table {
     min-width: 520px;
-    font-size: 0.78rem;
   }
 }
 
