@@ -87,7 +87,13 @@ class RunStatusRow(Base):
     ref_sigra: Mapped[str] = mapped_column(String(180), default="")
     cliente: Mapped[str] = mapped_column(String(180), default="")
     observacao: Mapped[str] = mapped_column(Text, default="")
+    direcao_movimento: Mapped[str] = mapped_column(String(20), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
 
 
 class AppUser(Base):
@@ -98,6 +104,7 @@ class AppUser(Base):
     password_hash: Mapped[str] = mapped_column(String(512))
     sector: Mapped[str] = mapped_column(String(80), default="financeiro")
     role: Mapped[str] = mapped_column(String(80), default="operator")
+    contact_email: Mapped[str] = mapped_column(String(180), default="")
     is_active: Mapped[int] = mapped_column(Integer, default=1)
     approval_status: Mapped[str] = mapped_column(String(30), default="approved", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -200,12 +207,40 @@ class RhCalendarEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class AutomationClient(Base):
+    """Cliente dentro de uma equipe (ex.: Yaro em Importação)."""
+
+    __tablename__ = "automation_clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    sector: Mapped[str] = mapped_column(String(40), index=True)
+    flow: Mapped[str] = mapped_column(String(40), index=True)
+    slug: Mapped[str] = mapped_column(String(80), index=True)
+    name: Mapped[str] = mapped_column(String(160))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class UserClientAccess(Base):
+    """Quais clientes um usuário pode ver/executar (visibility=client)."""
+
+    __tablename__ = "user_client_access"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    client_id: Mapped[int] = mapped_column(Integer, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class SectorAutomation(Base):
     __tablename__ = "sector_automations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     sector: Mapped[str] = mapped_column(String(40), index=True)
     flow: Mapped[str] = mapped_column(String(40), index=True)
+    client_slug: Mapped[str] = mapped_column(String(80), default="", index=True)
+    visibility: Mapped[str] = mapped_column(String(20), default="flow", index=True)
     key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(160))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -219,4 +254,41 @@ class SectorAutomation(Base):
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
     )
+
+
+class AutomationQueueTicket(Base):
+    __tablename__ = "automation_queue_tickets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    request_sector: Mapped[str] = mapped_column(String(40), index=True)
+    requester_user_id: Mapped[int] = mapped_column(Integer, index=True)
+    requester_username: Mapped[str] = mapped_column(String(120), index=True)
+    requester_email: Mapped[str] = mapped_column(String(180), default="")
+    status: Mapped[str] = mapped_column(String(40), default="aberto", index=True)
+    priority: Mapped[str] = mapped_column(String(20), default="normal", index=True)
+    assigned_to: Mapped[str] = mapped_column(String(120), default="", index=True)
+    resolution_notes: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        index=True,
+    )
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class AutomationQueueComment(Base):
+    __tablename__ = "automation_queue_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    ticket_id: Mapped[int] = mapped_column(Integer, index=True)
+    author_user_id: Mapped[int] = mapped_column(Integer, index=True)
+    author_username: Mapped[str] = mapped_column(String(120))
+    author_role: Mapped[str] = mapped_column(String(40), default="operator")
+    body: Mapped[str] = mapped_column(Text, default="")
+    is_internal: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 

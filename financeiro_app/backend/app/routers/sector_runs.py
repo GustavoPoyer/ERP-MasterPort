@@ -3,6 +3,7 @@ import os
 import threading
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -11,8 +12,9 @@ from ..db import get_db
 from ..models import AppUser, ReconciliationRun, SectorAutomation
 from ..schemas import RunRead
 from ..services.auth_service import require_current_user
-from ..services.automation_catalog import resolve_sector_automation
-from ..services.run_service import cleanup_temp_dir, create_run, create_temp_run_dir, execute_run
+from ..services.automation_access import can_execute_automation
+from ..services.automation_catalog import list_visible_automations, resolve_sector_automation
+from ..services.run_service import create_run, create_temp_run_dir, execute_run, resolve_run_output_file
 
 router = APIRouter(prefix="/sector-runs", tags=["sector-runs"])
 
@@ -51,6 +53,30 @@ def _find_running_sector_run(db: Session, automation_key: str) -> Reconciliation
     )
 
 
+def _get_sector_run_or_404(db: Session, run_id: int) -> ReconciliationRun:
+    run = db.get(ReconciliationRun, run_id)
+    if not run or run.account_id is not None:
+        raise HTTPException(status_code=404, detail="Execução não encontrada.")
+    return run
+
+
+def _require_run_access(db: Session, user: AppUser, sector: str, run: ReconciliationRun) -> SectorAutomation:
+    _require_sector_access(user, sector)
+    row = db.scalar(
+        select(SectorAutomation)
+        .where(SectorAutomation.key == run.automation_key, SectorAutomation.is_active == 1)
+        .limit(1)
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Automação não encontrada.")
+    sector_norm = sector.strip().lower()
+    if row.visibility != "global" and row.sector != sector_norm:
+        raise HTTPException(status_code=404, detail="Automação não cadastrada neste setor.")
+    if not can_execute_automation(db, user, row):
+        raise HTTPException(status_code=403, detail="Sem permissão para acessar esta execução.")
+    return row
+
+
 @router.get("", response_model=list[RunRead])
 def list_sector_runs(
     sector: str = Query(...),
@@ -60,13 +86,15 @@ def list_sector_runs(
     user: AppUser = Depends(require_current_user),
 ):
     _require_sector_access(user, sector)
-    keys_stmt = select(SectorAutomation.key).where(
-        SectorAutomation.sector == sector.strip().lower(),
-        SectorAutomation.is_active == 1,
+    visible = list_visible_automations(
+        db,
+        user,
+        sector=sector.strip().lower(),
+        flow=flow,
+        include_globals=True,
+        active_only=True,
     )
-    if flow:
-        keys_stmt = keys_stmt.where(SectorAutomation.flow == flow.strip().lower())
-    keys = [row for row in db.scalars(keys_stmt).all()]
+    keys = [row.key for row in visible]
     if not keys:
         return []
 
@@ -83,6 +111,46 @@ def list_sector_runs(
     return [_serialize_run(run) for run in runs]
 
 
+@router.get("/{run_id}", response_model=RunRead)
+def get_sector_run(
+    run_id: int,
+    sector: str = Query(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_current_user),
+):
+    run = _get_sector_run_or_404(db, run_id)
+    _require_run_access(db, user, sector, run)
+    return _serialize_run(run)
+
+
+@router.get("/{run_id}/download")
+def download_sector_run_output(
+    run_id: int,
+    sector: str = Query(...),
+    db: Session = Depends(get_db),
+    user: AppUser = Depends(require_current_user),
+):
+    run = _get_sector_run_or_404(db, run_id)
+    row = _require_run_access(db, user, sector, run)
+    if run.status != "completed":
+        raise HTTPException(status_code=400, detail="Download disponível apenas para execuções concluídas.")
+
+    try:
+        file_path = resolve_run_output_file(run)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Arquivo de saída não encontrado no servidor.")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    prefix = row.key.replace("_", "-")
+    filename = f"{prefix}_run_{run.id}.xlsx"
+    return FileResponse(
+        path=str(file_path),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=filename,
+    )
+
+
 @router.post("/upload", response_model=RunRead)
 async def trigger_sector_run_upload(
     automation_key: str = Form(...),
@@ -97,15 +165,16 @@ async def trigger_sector_run_upload(
     key = automation_key.strip().lower()
     row = db.scalar(
         select(SectorAutomation)
-        .where(
-            SectorAutomation.key == key,
-            SectorAutomation.sector == sector.strip().lower(),
-            SectorAutomation.is_active == 1,
-        )
+        .where(SectorAutomation.key == key, SectorAutomation.is_active == 1)
         .limit(1)
     )
     if not row:
+        raise HTTPException(status_code=404, detail="Automação não encontrada.")
+    sector_norm = sector.strip().lower()
+    if row.visibility != "global" and row.sector != sector_norm:
         raise HTTPException(status_code=404, detail="Automação não cadastrada neste setor.")
+    if not can_execute_automation(db, user, row):
+        raise HTTPException(status_code=403, detail="Sem permissão para executar esta automação.")
 
     _resolve_automation(db, key)
 

@@ -92,15 +92,179 @@ COLUNAS_COMPROVANTES = {
 }
 
 from numerario_itau import COLUNAS_NUMERARIO, conciliar_extrato_numerario, ler_numerario
+from runtime_paths import (
+    financeiro_app_root,
+    resolve_input_folder,
+    resolve_itau_output_path,
+)
 
-# Caminho de saída
-# Pode ser absoluto (recomendado) ou relativo ao diretório deste script.
-CAMINHO_SAIDA = r'G:\Drives compartilhados\automação\Conciliações\conciliacao_itau_sigra.xlsx'
+# Caminho de saída (resolvido em runtime via ITAU_OUTPUT_PATH / run do site)
+CAMINHO_SAIDA = None
 
 
 # ============================================================================
 # FUNÇÕES DE LEITURA E NORMALIZAÇÃO
 # ============================================================================
+
+def _pontuar_colunas_extrato(df_teste) -> int:
+    cols = [str(c).strip().lower() for c in df_teste.columns]
+    score = 0
+    if any('data' in c for c in cols):
+        score += 2
+    if any('valor' in c or '(r$)' in c or c.endswith('r$') for c in cols):
+        score += 2
+    if any(
+        'destino' in c or 'lançamento' in c or 'lancamento' in c
+        or 'razão social' in c or 'razao social' in c
+        or 'histórico' in c or 'historico' in c
+        or 'ag./origem' in c or 'ag/origem' in c
+        for c in cols
+    ):
+        score += 1
+    if any('unnamed' in c for c in cols):
+        score -= 1
+    return score
+
+
+def _detectar_linha_cabecalho_extrato_itau(caminho, sheet_name, max_scan=25):
+    """Varre as primeiras linhas da aba e localiza a linha de cabeçalho do extrato."""
+    if not OPENPYXL_DISPONIVEL:
+        return None
+    try:
+        wb = load_workbook(caminho, read_only=True, data_only=True)
+        if sheet_name not in wb.sheetnames:
+            wb.close()
+            return None
+        ws = wb[sheet_name]
+        melhor_linha = None
+        melhor_score = 0
+        for row_idx, row in enumerate(
+            ws.iter_rows(min_row=1, max_row=max_scan, values_only=True),
+            start=1,
+        ):
+            celulas = [str(c).strip().lower() if c is not None else '' for c in row]
+            score = 0
+            for cell in celulas:
+                if not cell:
+                    continue
+                if 'data' in cell:
+                    score += 2
+                if 'valor' in cell or '(r$)' in cell or cell.endswith('r$'):
+                    score += 2
+                if any(
+                    termo in cell
+                    for termo in (
+                        'lançamento', 'lancamento', 'histórico', 'historico',
+                        'razão social', 'razao social', 'destino', 'favorecido',
+                        'ag./origem', 'ag/origem',
+                    )
+                ):
+                    score += 1
+            if score > melhor_score:
+                melhor_score = score
+                melhor_linha = row_idx
+        wb.close()
+        if melhor_score >= 3 and melhor_linha:
+            return melhor_linha - 1
+    except Exception:
+        return None
+    return None
+
+
+def _dataframe_tem_conteudo_extrato(df) -> bool:
+    """Valida pelo conteúdo quando os nomes das colunas não são confiáveis."""
+    if df is None or len(df) == 0 or len(df.columns) < 2:
+        return False
+
+    def parece_data(valor):
+        if pd.isna(valor):
+            return False
+        texto = str(valor).strip()
+        if re.match(r'^\d{1,2}/\d{1,2}(/\d{2,4})?$', texto):
+            return True
+        try:
+            return pd.notna(pd.to_datetime(valor, errors='coerce'))
+        except Exception:
+            return False
+
+    def parece_valor(valor):
+        if pd.isna(valor):
+            return False
+        if isinstance(valor, (int, float)) and not isinstance(valor, bool):
+            return True
+        texto = str(valor).strip().replace('R$', '').replace(' ', '')
+        return bool(re.search(r'\d', texto))
+
+    for col in df.columns[:3]:
+        serie = df[col].dropna().head(30)
+        if len(serie) == 0:
+            continue
+        if serie.apply(parece_data).sum() >= max(2, len(serie) // 4):
+            for col_valor in df.columns:
+                if col_valor == col:
+                    continue
+                serie_valor = df[col_valor].dropna().head(30)
+                if serie_valor.apply(parece_valor).sum() >= max(2, len(serie_valor) // 4):
+                    return True
+    return False
+
+
+def _ler_aba_extrato_itau(caminho, sheet_name):
+    """Lê uma aba do extrato Itaú com detecção flexível de cabeçalho."""
+    candidatos = []
+    linha_detectada = _detectar_linha_cabecalho_extrato_itau(caminho, sheet_name)
+    headers_tentados = []
+    if linha_detectada is not None:
+        headers_tentados.append(linha_detectada)
+    headers_tentados.extend([5, 0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
+
+    vistos = set()
+    for header_row in headers_tentados:
+        if header_row in vistos:
+            continue
+        vistos.add(header_row)
+        try:
+            df_teste = pd.read_excel(
+                caminho,
+                sheet_name=sheet_name,
+                header=header_row,
+                engine='openpyxl',
+            )
+            if len(df_teste) == 0:
+                continue
+            candidatos.append((df_teste, header_row))
+        except Exception:
+            continue
+
+    if not candidatos:
+        try:
+            df_bruto = pd.read_excel(caminho, sheet_name=sheet_name, header=None, engine='openpyxl')
+            if len(df_bruto) > 0:
+                candidatos.append((df_bruto, -1))
+        except Exception:
+            return None
+
+    def pontuar_candidato(item):
+        df_teste, header_row = item
+        df_limpo = df_teste.dropna(how='all')
+        score = _pontuar_colunas_extrato(df_limpo)
+        if _dataframe_tem_conteudo_extrato(df_limpo):
+            score += 3
+        return (score, len(df_limpo))
+
+    melhor_df, melhor_header = max(candidatos, key=pontuar_candidato)
+    melhor_df = melhor_df.dropna(how='all')
+    score_final = _pontuar_colunas_extrato(melhor_df)
+    if score_final < 3 and not _dataframe_tem_conteudo_extrato(melhor_df):
+        return None
+
+    if melhor_header >= 0:
+        print(
+            f"[INFO] Aba '{sheet_name}': cabeçalho detectado na linha {melhor_header + 1} "
+            f"(colunas: {list(melhor_df.columns)[:6]})"
+        )
+    return melhor_df
+
 
 def ler_extrato(caminho):
     """
@@ -115,53 +279,16 @@ def ler_extrato(caminho):
     """
     try:
         xl = pd.ExcelFile(caminho, engine='openpyxl')
-
-        def pontuar_colunas(df_teste):
-            cols = [str(c).lower() for c in df_teste.columns]
-            score = 0
-            if any('data' in c for c in cols):
-                score += 2
-            if any('valor' in c for c in cols):
-                score += 2
-            if any('destino' in c or 'lançamento' in c or 'lancamento' in c or 'razão social' in c or 'razao social' in c for c in cols):
-                score += 1
-            if any('unnamed' in c for c in cols):
-                score -= 1
-            return score
-
         dfs_extrato = []
         abas_lidas = 0
 
-        # Lê TODAS as abas e consolida (layout mensal: JAN/FEV/MAR em abas separadas)
+        print(f"[INFO] Abas encontradas no extrato: {xl.sheet_names}")
+
         for sheet_name in xl.sheet_names:
             try:
-                candidatos = []
-                # Candidato 1: formato com cabeçalho na linha 6
-                try:
-                    c1 = pd.read_excel(caminho, sheet_name=sheet_name, header=5, engine='openpyxl')
-                    if len(c1) > 0:
-                        candidatos.append(c1)
-                except Exception:
-                    pass
-
-                # Candidato 2: leitura padrão
-                try:
-                    c2 = pd.read_excel(caminho, sheet_name=sheet_name, engine='openpyxl')
-                    if len(c2) > 0:
-                        candidatos.append(c2)
-                except Exception:
-                    pass
-
-                if not candidatos:
-                    continue
-
-                # Escolhe o melhor candidato para a aba
-                df_aba = max(candidatos, key=pontuar_colunas).dropna(how='all')
-                if len(df_aba) == 0:
-                    continue
-
-                # Filtra abas que não parecem extrato
-                if pontuar_colunas(df_aba) < 3:
+                df_aba = _ler_aba_extrato_itau(caminho, sheet_name)
+                if df_aba is None or len(df_aba) == 0:
+                    print(f"[AVISO] Aba '{sheet_name}' ignorada (layout não reconhecido)")
                     continue
 
                 df_aba = df_aba.copy()
@@ -169,11 +296,15 @@ def ler_extrato(caminho):
                 dfs_extrato.append(df_aba)
                 abas_lidas += 1
                 print(f"[INFO] Aba de extrato carregada: '{sheet_name}' ({len(df_aba)} linhas)")
-            except Exception:
+            except Exception as exc:
+                print(f"[AVISO] Aba '{sheet_name}' ignorada: {exc}")
                 continue
 
         if not dfs_extrato:
-            raise ValueError("Nenhuma aba de extrato válida foi encontrada no arquivo.")
+            raise ValueError(
+                "Nenhuma aba de extrato válida foi encontrada no arquivo. "
+                f"Abas lidas: {xl.sheet_names}"
+            )
 
         df = pd.concat(dfs_extrato, ignore_index=True).dropna(how='all')
         print(f"[OK] Extrato consolidado: {len(df)} lançamentos ({abas_lidas} aba(s))")
@@ -2042,23 +2173,27 @@ def formatar_aba_status_extrato(workbook):
 # FUNÇÕES DE BUSCA DE ARQUIVOS
 # ============================================================================
 
-def buscar_arquivos_itau_sigra():
+def buscar_arquivos_itau_sigra(pasta_entrada=None):
     """
-    Busca automaticamente os arquivos do Itaú, SIGRA e Numerário na pasta do dia de hoje.
+    Busca automaticamente os arquivos do Itaú, SIGRA e Numerário.
+    No site: usa ITAU_INPUT_FOLDER (pasta da rodada com uploads).
+    Standalone: usa downloads/YYYY-MM-DD na raiz do app.
     
     Returns:
         Tupla com (caminho_extrato, caminho_comprovantes, caminho_numerario)
         caminho_numerario pode ser None se o arquivo não for encontrado
     """
-    script_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-    data_hoje = datetime.now().strftime('%Y-%m-%d')
-    pasta_downloads = os.path.join(script_dir, 'downloads', data_hoje)
-    
-    print(f"\n[INFO] Buscando arquivos na pasta: {pasta_downloads}")
-    
-    # Verifica se a pasta existe - se não, busca a mais recente
-    if not os.path.exists(pasta_downloads):
-        pasta_base = os.path.join(script_dir, 'downloads')
+    app_root = financeiro_app_root()
+
+    if pasta_entrada and os.path.isdir(pasta_entrada):
+        pasta_downloads = os.path.abspath(pasta_entrada)
+        pasta_base = os.path.dirname(pasta_downloads)
+    else:
+        data_hoje = datetime.now().strftime('%Y-%m-%d')
+        pasta_base = os.path.join(app_root, 'downloads')
+        pasta_downloads = os.path.join(pasta_base, data_hoje)
+
+    if pasta_entrada is None and not os.path.exists(pasta_downloads):
         if os.path.exists(pasta_base):
             pastas = []
             for item in os.listdir(pasta_base):
@@ -2066,20 +2201,24 @@ def buscar_arquivos_itau_sigra():
                 if os.path.isdir(caminho_item) and len(item) == 10 and item.count('-') == 2:
                     try:
                         datetime.strptime(item, '%Y-%m-%d')
-                        pastas.append(item)
-                    except:
+                        pastas.append((item, caminho_item))
+                    except ValueError:
                         pass
-            
+
             if pastas:
-                pastas.sort()
-                pasta_mais_recente = pastas[-1]
-                pasta_downloads = os.path.join(pasta_base, pasta_mais_recente)
-                print(f"[AVISO] Pasta de hoje ({data_hoje}) não encontrada.")
-                print(f"[INFO] Usando pasta mais recente disponível: {pasta_mais_recente}")
-            else:
-                raise FileNotFoundError(f"Pasta não encontrada: {pasta_downloads}")
-        else:
-            raise FileNotFoundError(f"Pasta base 'downloads' não existe: {pasta_base}")
+                pastas.sort(key=lambda x: x[0], reverse=True)
+                pasta_downloads = pastas[0][1]
+                print(f"[INFO] Pasta do dia não encontrada. Usando pasta mais recente: {pastas[0][0]}")
+        elif pasta_entrada is None:
+            raise FileNotFoundError(
+                f"Pasta base 'downloads' não existe: {pasta_base}\n"
+                "No site, envie os arquivos na rodada ou defina ITAU_INPUT_FOLDER."
+            )
+
+    print(f"\n[INFO] Buscando arquivos na pasta: {pasta_downloads}")
+
+    if not os.path.exists(pasta_downloads):
+        raise FileNotFoundError(f"Pasta não encontrada: {pasta_downloads}")
     
     # Busca arquivo do extrato Itaú (vários padrões - formato pode variar com nova estrutura do banco)
     padroes_extrato = [
@@ -2119,21 +2258,39 @@ def buscar_arquivos_itau_sigra():
         f for f in arquivos_numerario if not os.path.basename(f).startswith('~$')
     ]
 
-    def ordenar_por_relevancia(caminhos):
-        """
-        Ordena por data de modificação (mais novo primeiro) e tamanho (maior primeiro).
-        Evita escolher arquivo antigo/errado quando há múltiplos candidatos no diretório.
-        """
-        validos = [c for c in caminhos if os.path.isfile(c)]
-        return sorted(
-            validos,
-            key=lambda p: (os.path.getmtime(p), os.path.getsize(p)),
-            reverse=True
-        )
+    def _prioridade_extrato(path: str) -> tuple:
+        nome = os.path.basename(path).lower()
+        prioridade = 0
+        if 'extrato_itau' in nome:
+            prioridade += 20
+        elif 'extrato' in nome and 'itau' in nome:
+            prioridade += 10
+        if nome.startswith('run') and 'extrato' in nome:
+            prioridade += 5
+        return (prioridade, os.path.getmtime(path), os.path.getsize(path))
 
-    arquivos_extrato = ordenar_por_relevancia(arquivos_extrato)
-    arquivos_comprovantes = ordenar_por_relevancia(arquivos_comprovantes)
-    arquivos_numerario = ordenar_por_relevancia(arquivos_numerario)
+    def _prioridade_comprovante(path: str) -> tuple:
+        nome = os.path.basename(path).lower()
+        prioridade = 0
+        if 'pgto_master' in nome or 'pgto_sigra' in nome:
+            prioridade += 20
+        elif 'pgto' in nome or 'pgtos' in nome:
+            prioridade += 10
+        if nome.startswith('run'):
+            prioridade += 5
+        return (prioridade, os.path.getmtime(path), os.path.getsize(path))
+
+    def ordenar_extratos(caminhos):
+        validos = [c for c in caminhos if os.path.isfile(c)]
+        return sorted(validos, key=_prioridade_extrato, reverse=True)
+
+    def ordenar_comprovantes(caminhos):
+        validos = [c for c in caminhos if os.path.isfile(c)]
+        return sorted(validos, key=_prioridade_comprovante, reverse=True)
+
+    arquivos_extrato = ordenar_extratos(arquivos_extrato)
+    arquivos_comprovantes = ordenar_comprovantes(arquivos_comprovantes)
+    arquivos_numerario = ordenar_extratos(arquivos_numerario)
     
     # Verifica se encontrou os arquivos
     if not arquivos_extrato:
@@ -2377,9 +2534,24 @@ def main():
     print("="*80)
     
     try:
+        app_root = financeiro_app_root()
+        pasta_entrada = resolve_input_folder(env_key="ITAU_INPUT_FOLDER")
+        run_id_raw = os.environ.get("ITAU_RUN_ID", "").strip()
+        run_id = int(run_id_raw) if run_id_raw.isdigit() else None
+        caminho_saida = resolve_itau_output_path(
+            app_root=app_root,
+            run_id=run_id,
+            account_slug=os.environ.get("ITAU_ACCOUNT_SLUG", "").strip(),
+        )
+        if pasta_entrada:
+            print(f"[INFO] Pasta de entrada (rodada): {pasta_entrada}")
+        print(f"[INFO] Arquivo de saída: {caminho_saida}")
+
         # 1. Busca arquivos
         print("\n[1/7] Buscando arquivos...")
-        caminho_extrato, caminho_comprovantes, caminho_numerario = buscar_arquivos_itau_sigra()
+        caminho_extrato, caminho_comprovantes, caminho_numerario = buscar_arquivos_itau_sigra(
+            pasta_entrada=pasta_entrada
+        )
         
         # 2. Lê arquivos
         print("\n[2/7] Lendo arquivos...")
@@ -2486,10 +2658,6 @@ def main():
         
         # 7. Gera Excel (completa planilha existente em vez de substituir)
         print("\n[7/7] Gerando arquivo Excel...")
-        script_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-        caminho_saida = CAMINHO_SAIDA
-        if not os.path.isabs(caminho_saida):
-            caminho_saida = os.path.join(script_dir, caminho_saida)
         os.makedirs(os.path.dirname(caminho_saida), exist_ok=True)
         
         dados_existentes = carregar_dados_existentes_itau(caminho_saida)

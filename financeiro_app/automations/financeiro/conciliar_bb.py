@@ -57,10 +57,10 @@ CAMINHO_COMPROVANTES = None  # Será definido automaticamente
 # PGTOS tem: Ref. Cliente, Cliente, CNPJ, Valor, Pago Despachante, Criação, Vencimento, RPS, Categoria, Reembolso, Fornecedor
 COLUNAS_EXTRATO = {
     'data': 'Data',  # Coluna A: Data (DD/MM/YYYY)
-    'valor': 'valor',  # Coluna D: valor (minúscula)
+    'valor': 'Valor R$',  # MAIO+ usa "Valor R$"; abas antigas usam "valor"
     'favorecido': 'Historico',  # Coluna B: Historico (descrição/favorecido)
     'descricao': 'Detalhamento Hist.',  # Coluna F: Detalhamento Hist. (opcional)
-    'documento': 'Documento'  # Coluna C: Documento (código que corresponde ao RPS dos comprovantes)
+    'documento': 'Documento'  # ou "Numero Documento"
 }
 
 COLUNAS_COMPROVANTES = {
@@ -71,7 +71,7 @@ COLUNAS_COMPROVANTES = {
     'rps': 'RPS'  # Coluna L: RPS (código que corresponde ao Documento do extrato)
 }
 
-# Caminho de saída (resolvido em runtime; legado G: só se BB_OUTPUT_PATH apontar para lá)
+# Caminho de saída (resolvido em runtime via BB_OUTPUT_PATH / run do site)
 CAMINHO_SAIDA = None
 
 
@@ -79,40 +79,9 @@ CAMINHO_SAIDA = None
 # FUNÇÕES DE LEITURA E NORMALIZAÇÃO
 # ============================================================================
 
-MESES_BB = {
-    1: ['JANEIRO', 'JAN'],
-    2: ['FEVEREIRO', 'FEV'],
-    3: ['MARÇO', 'MARCO', 'MAR'],
-    4: ['ABRIL', 'ABR'],
-    5: ['MAIO', 'MAI'],
-    6: ['JUNHO', 'JUN'],
-    7: ['JULHO', 'JUL'],
-    8: ['AGOSTO', 'AGO'],
-    9: ['SETEMBRO', 'SET'],
-    10: ['OUTUBRO', 'OUT'],
-    11: ['NOVEMBRO', 'NOV'],
-    12: ['DEZEMBRO', 'DEZ'],
-}
-
-
-def _mes_da_aba_bb(nome_aba: str) -> int | None:
-    """Retorna número do mês (1-12) se o nome da aba parecer mês do extrato BB."""
-    nome = (nome_aba or '').upper()
-    for mes_num, aliases in MESES_BB.items():
-        for alias in aliases:
-            if alias in nome:
-                return mes_num
-    return None
-
-
-def _listar_abas_mensais_bb(sheet_names: list[str]) -> list[str]:
-    abas = [s for s in sheet_names if _mes_da_aba_bb(s) is not None]
-    return sorted(abas, key=lambda s: (_mes_da_aba_bb(s) or 0, s))
-
-
-def _ler_aba_extrato_bb(caminho: str, sheet_name) -> pd.DataFrame:
+def _ler_aba_extrato_bb(caminho, sheet_name):
+    """Lê uma aba do extrato BB com detecção de cabeçalho."""
     df = pd.read_excel(caminho, sheet_name=sheet_name, engine='openpyxl')
-
     if any('Unnamed' in str(col) for col in df.columns):
         for skip_rows in range(0, 10):
             try:
@@ -125,57 +94,63 @@ def _ler_aba_extrato_bb(caminho: str, sheet_name) -> pd.DataFrame:
                     break
             except Exception:
                 continue
+    return df.dropna(how='all')
 
-    df = df.dropna(how='all')
 
-    col_hist = 'Historico' if 'Historico' in df.columns else ('historico' if 'historico' in df.columns else None)
-    if col_hist:
-        df = df[~df[col_hist].astype(str).str.contains('Saldo Anterior', case=False, na=False)]
-
-    df = df.copy()
-    df['Aba Extrato'] = str(sheet_name)
-    return df
+def _remover_linhas_nao_lancamento(df):
+    """Remove saldo anterior e linhas intermediárias de SALDO."""
+    hist_col = None
+    for col in df.columns:
+        if str(col).lower().startswith('historico'):
+            hist_col = col
+            break
+    if not hist_col:
+        return df
+    historico = df[hist_col].astype(str)
+    historico_compacto = historico.str.replace(r'\s+', '', regex=True).str.upper()
+    mask = ~historico.str.contains('Saldo Anterior', case=False, na=False)
+    mask &= historico_compacto != 'SALDO'
+    return df.loc[mask].copy()
 
 
 def ler_extrato(caminho):
     """
-    Lê o arquivo Excel do extrato bancário.
-    Para BB: se houver várias abas mensais (JANEIRO26, FEVEREIRO26, ...), consolida todas.
+    Lê o arquivo Excel do extrato bancário BB (todas as abas mensais).
+    
+    Args:
+        caminho: Caminho do arquivo Excel
+        
+    Returns:
+        DataFrame com os dados do extrato consolidados
     """
     try:
         xl = pd.ExcelFile(caminho, engine='openpyxl')
-        abas_mensais = _listar_abas_mensais_bb(xl.sheet_names)
-
-        if len(abas_mensais) > 1:
-            print(f"[INFO] Extrato com {len(abas_mensais)} abas mensais — consolidando todas:")
-            partes = []
-            for sheet_name in abas_mensais:
+        frames = []
+        for sheet_name in xl.sheet_names:
+            try:
                 df_aba = _ler_aba_extrato_bb(caminho, sheet_name)
-                print(f"  - {sheet_name}: {len(df_aba)} linha(s)")
-                partes.append(df_aba)
-            df = pd.concat(partes, ignore_index=True)
-            print(f"[OK] Extrato carregado: {len(df)} lançamentos ({len(abas_mensais)} abas)")
-            return df
+                if df_aba is None or len(df_aba) == 0:
+                    continue
+                df_aba = df_aba.copy()
+                df_aba['Aba Extrato'] = sheet_name
+                df_aba = _remover_linhas_nao_lancamento(df_aba)
+                if len(df_aba) == 0:
+                    continue
+                frames.append(df_aba)
+            except Exception as exc:
+                print(f"[AVISO] Aba '{sheet_name}' ignorada: {exc}")
 
-        mes_atual = datetime.now().month
-        sheet_name = None
-        nomes_mes_atual = MESES_BB.get(mes_atual, [])
-        for nome_mes in nomes_mes_atual:
-            for sheet in xl.sheet_names:
-                if nome_mes.upper() in sheet.upper():
-                    sheet_name = sheet
-                    break
-            if sheet_name:
-                break
+        if not frames:
+            raise FileNotFoundError(f"Nenhuma aba válida encontrada em {caminho}")
 
-        if sheet_name:
-            print(f"[INFO] Usando aba do mês atual: '{sheet_name}'")
-        else:
-            sheet_name = abas_mensais[0] if abas_mensais else (xl.sheet_names[-1] if xl.sheet_names else 0)
-            print(f"[INFO] Aba do mês atual não encontrada, usando: '{sheet_name}'")
+        if len(frames) > 1:
+            print(f"[INFO] Extrato com {len(frames)} abas mensais — consolidando todas:")
+            for df_aba in frames:
+                nome = df_aba['Aba Extrato'].iloc[0]
+                print(f"  - {nome}: {len(df_aba)} linha(s)")
 
-        df = _ler_aba_extrato_bb(caminho, sheet_name)
-        print(f"[OK] Extrato carregado: {len(df)} lançamentos (aba: {sheet_name})")
+        df = pd.concat(frames, ignore_index=True)
+        print(f"[OK] Extrato carregado: {len(df)} lançamentos ({len(frames)} abas)")
         return df
     except Exception as e:
         print(f"[ERRO] Erro ao ler extrato: {e}")
@@ -325,6 +300,59 @@ def normalizar_codigo_texto(valor):
     return texto
 
 
+def _resolver_coluna_valor(columns):
+    """
+    Escolhe a coluna monetária do extrato BB.
+    Prioriza 'Valor R$' (aba MAIO+) sobre 'valor' (abas antigas).
+    """
+    cols = list(columns)
+
+    def _norm(name):
+        return str(name).lower().strip()
+
+    for col in cols:
+        cl = _norm(col)
+        if 'valor' in cl and ('r$' in cl or '(r$)' in cl):
+            return col
+
+    for col in cols:
+        if _norm(col) == 'valor':
+            return col
+
+    for col in cols:
+        cl = _norm(col)
+        if 'valor' in cl and 'documento' not in cl and 'numero' not in cl:
+            return col
+
+    return None
+
+
+def _serie_valor_extrato(df_prep, col_valor):
+    """
+    Unifica valor quando o arquivo mistura colunas 'valor' e 'Valor R$' (várias abas).
+    """
+    cols_valor = [
+        c for c in df_prep.columns
+        if 'valor' in str(c).lower() and 'documento' not in str(c).lower()
+    ]
+    col_vr = next((c for c in cols_valor if 'r$' in str(c).lower()), None)
+    col_v = next((c for c in cols_valor if str(c).lower().strip() == 'valor'), None)
+
+    if col_vr and col_v and col_v in df_prep.columns and col_vr in df_prep.columns:
+        return df_prep[col_v].combine_first(df_prep[col_vr])
+
+    if col_valor in df_prep.columns:
+        return df_prep[col_valor]
+
+    if col_vr and col_vr in df_prep.columns:
+        return df_prep[col_vr]
+
+    if col_v and col_v in df_prep.columns:
+        return df_prep[col_v]
+
+    raise ValueError(f"Coluna de valor não encontrada. Colunas: {list(df_prep.columns)}")
+
+
 def normalizar_valor(valor):
     """
     Normaliza valores monetários.
@@ -451,7 +479,7 @@ def preparar_dados(df, tipo='extrato'):
                 return c
         return None
     col_data = _achar_coluna(col_config_data, df_prep.columns)
-    col_valor = _achar_coluna(col_config_valor, df_prep.columns)
+    col_valor = _resolver_coluna_valor(df_prep.columns) or _achar_coluna(col_config_valor, df_prep.columns)
     col_favorecido = _achar_coluna(col_config_favorecido, df_prep.columns)
     col_documento = _achar_coluna(col_config_documento, df_prep.columns)
     col_rps = _achar_coluna(col_config_rps, df_prep.columns)
@@ -469,7 +497,7 @@ def preparar_dados(df, tipo='extrato'):
             'historico' in col_lower or 'complementar' in col_lower or 'fornecedor' in col_lower or 'categoria' in col_lower) and col_favorecido is None:
             col_favorecido = col
         # Para BB: busca "documento" (extrato) e "rps" (comprovantes)
-        if 'documento' in col_lower and col_documento is None:
+        if ('documento' in col_lower or 'numero documento' in col_lower) and col_documento is None:
             col_documento = col
         if 'rps' in col_lower and col_rps is None:
             col_rps = col
@@ -483,6 +511,8 @@ def preparar_dados(df, tipo='extrato'):
         if not col_data:
             col_data = df_prep.columns[0] if len(df_prep.columns) > 0 else None
     
+    if not col_valor:
+        col_valor = _resolver_coluna_valor(df_prep.columns)
     if not col_valor:
         for col in df_prep.columns:
             if 'Unnamed' not in str(col) and col != col_data:
@@ -513,7 +543,7 @@ def preparar_dados(df, tipo='extrato'):
     df_normalizado = pd.DataFrame()
     df_normalizado['data_original'] = df_prep[col_data]
     df_normalizado['data'] = normalizar_data(df_prep[col_data])
-    df_normalizado['valor'] = df_prep[col_valor].apply(normalizar_valor)
+    df_normalizado['valor'] = _serie_valor_extrato(df_prep, col_valor).apply(normalizar_valor)
     
     # Para BB: se for comprovantes, pode usar "Categoria" além de "Fornecedor" para favorecido
     if tipo == 'comprovantes':
@@ -2006,12 +2036,6 @@ def criar_aba_status_extrato(df_extrato, df_conciliacao, df_extratos_pendentes, 
         valor_extrato = extrato_row.get('valor', 0)
         data_extrato = extrato_row.get('data_original', '')
         favorecido = extrato_row.get('favorecido_original', '')
-        aba_extrato = ''
-        for col_aba in ('Aba Extrato', 'aba_extrato'):
-            if col_aba in extrato_row.index and pd.notna(extrato_row.get(col_aba)):
-                aba_extrato = str(extrato_row.get(col_aba)).strip()
-                if aba_extrato:
-                    break
         
         # Busca categoria do extrato (se existir)
         categoria_extrato = '-'
@@ -2092,9 +2116,10 @@ def criar_aba_status_extrato(df_extrato, df_conciliacao, df_extratos_pendentes, 
             diferenca = abs(valor_extrato)
             observacao = 'Não encontrou comprovantes correspondentes'
         
+        aba_extrato = extrato_row.get('Aba Extrato', '')
         status_lista.append({
             'ID Extrato': id_extrato,
-            'Aba Extrato': aba_extrato,
+            'Aba Extrato': aba_extrato if pd.notna(aba_extrato) else '',
             'Data': data_extrato,
             'Valor Extrato': abs(valor_extrato) if valor_extrato else 0,
             'Favorecido/Descrição': str(favorecido)[:60] if favorecido else '',
@@ -2730,8 +2755,7 @@ def gerar_excel_final(df_extrato, df_comprovantes, df_conciliacao,
     print("GERANDO ARQUIVO EXCEL FINAL")
     print("="*80)
 
-    ensure_parent_dir(caminho_saida)
-    print(f"[INFO] Salvando Excel em: {caminho_saida}")
+    caminho_saida = ensure_parent_dir(caminho_saida)
     
     # Tenta gerar o arquivo, se estiver aberto, usa nome alternativo
     caminho_final = caminho_saida
@@ -2927,24 +2951,57 @@ def gerar_excel_final(df_extrato, df_comprovantes, df_conciliacao,
 # FUNÇÃO DE BUSCA DE ARQUIVOS
 # ============================================================================
 
+def _escolher_arquivo(candidatos, tipo="extrato"):
+    """Prioriza arquivos enviados pelo site (prefixo run<id>_) quando há duplicatas."""
+    if not candidatos:
+        return None
+    if len(candidatos) == 1:
+        return candidatos[0]
+    run_files = [
+        f for f in candidatos
+        if re.search(r"run\d+_", os.path.basename(f), re.IGNORECASE)
+    ]
+    pool = run_files or list(candidatos)
+    pool.sort(key=lambda f: os.path.basename(f).lower())
+    if tipo == "extrato":
+        pool.sort(
+            key=lambda f: (
+                "extrato" in os.path.basename(f).lower(),
+                "run" in os.path.basename(f).lower(),
+            ),
+            reverse=True,
+        )
+    else:
+        pool.sort(
+            key=lambda f: (
+                "pgto" in os.path.basename(f).lower(),
+                "run" in os.path.basename(f).lower(),
+            ),
+            reverse=True,
+        )
+    return pool[0]
+
+
 def buscar_arquivos_bb(pasta_entrada=None):
     """
-    Busca automaticamente os arquivos do Banco do Brasil na pasta do dia de hoje.
+    Busca automaticamente os arquivos do Banco do Brasil.
+    No site: usa BB_INPUT_FOLDER (pasta da rodada com uploads).
+    Standalone: usa downloads/YYYY-MM-DD na raiz do app.
     
     Returns:
         Tupla com (caminho_extrato, caminho_comprovantes)
     """
-    script_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+    app_root = financeiro_app_root()
 
     if pasta_entrada and os.path.isdir(pasta_entrada):
         pasta_downloads = os.path.abspath(pasta_entrada)
+        pasta_base = os.path.dirname(pasta_downloads)
     else:
-        # Obtém a data de hoje no formato YYYY-MM-DD
         data_hoje = datetime.now().strftime('%Y-%m-%d')
-        pasta_base = os.path.join(script_dir, 'downloads')
+        pasta_base = os.path.join(app_root, 'downloads')
         pasta_downloads = os.path.join(pasta_base, data_hoje)
     
-    # Se pasta do dia não existe, usa a mais recente disponível (somente modo automático)
+    # Se pasta do dia não existe, usa a mais recente disponível (modo automático)
     if pasta_entrada is None and not os.path.exists(pasta_downloads):
         if os.path.exists(pasta_base):
             pastas = []
@@ -2994,7 +3051,7 @@ def buscar_arquivos_bb(pasta_entrada=None):
     # Remove duplicatas
     arquivos_extrato = list(set(arquivos_extrato))
     
-    # Busca arquivo de comprovantes (aceita "pgto" e "pgtos" no nome)
+    # Busca arquivo de comprovantes (pgto / pgtos — padrão do site e do drive)
     arquivos_comprovantes = glob.glob(os.path.join(pasta_downloads, '*pgto*.xlsx'))
     arquivos_comprovantes.extend(glob.glob(os.path.join(pasta_downloads, '*PGTO*.xlsx')))
     arquivos_comprovantes.extend(glob.glob(os.path.join(pasta_downloads, '*Pgto*.xlsx')))
@@ -3017,7 +3074,7 @@ def buscar_arquivos_bb(pasta_entrada=None):
     # Verifica se encontrou os arquivos
     if not arquivos_extrato:
         raise FileNotFoundError(f"Nenhum arquivo de extrato BB encontrado na pasta {pasta_downloads}\n"
-                               f"Procurei por arquivos contendo 'extrato bb' ou 'bb' (sem 'pgto/pgtos') no nome.\n"
+                               f"Procurei por arquivos contendo 'extrato bb' ou 'bb' (sem 'pgtos') no nome.\n"
                                f"Arquivos disponíveis: {[os.path.basename(f) for f in todos_arquivos]}")
     
     if not arquivos_comprovantes:
@@ -3025,9 +3082,8 @@ def buscar_arquivos_bb(pasta_entrada=None):
                                f"Procurei por arquivos contendo 'pgto' ou 'pgtos' no nome.\n"
                                f"Arquivos disponíveis: {[os.path.basename(f) for f in todos_arquivos]}")
     
-    # Se encontrou múltiplos arquivos, usa o primeiro (ou pode implementar lógica mais sofisticada)
-    caminho_extrato = arquivos_extrato[0]
-    caminho_comprovantes = arquivos_comprovantes[0]
+    caminho_extrato = _escolher_arquivo(arquivos_extrato, tipo="extrato")
+    caminho_comprovantes = _escolher_arquivo(arquivos_comprovantes, tipo="comprovantes")
     
     if len(arquivos_extrato) > 1:
         print(f"[AVISO] Múltiplos arquivos de extrato encontrados. Usando: {os.path.basename(caminho_extrato)}")

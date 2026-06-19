@@ -1,8 +1,12 @@
 .venv/
+backend/.env
 frontend/node_modules/
 frontend/.next/
 backend/financeiro_app.db
 downloads/
 output/
+**/Saida/
+**/ocr_debug.log
+run_logs.txt
 **/__pycache__/
 *.pyc

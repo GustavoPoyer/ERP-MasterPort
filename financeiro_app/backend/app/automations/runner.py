@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import sys
 from collections.abc import Callable
 
 from .base import AutomationResult
@@ -49,7 +50,7 @@ def run_python_script(
         env.update({k: v for k, v in env_extra.items() if v is not None})
 
     proc = subprocess.Popen(
-        ["python", script_path],
+        [sys.executable, script_path],
         cwd=run_cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,

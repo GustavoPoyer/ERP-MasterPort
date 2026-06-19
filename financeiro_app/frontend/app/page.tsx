@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { KivoAssistant } from "../components/KivoAssistant";
 import { KivoRobot } from "../components/KivoRobot";
+import { AutomationClientAccessPanel } from "../components/AutomationClientAccessPanel";
+import { AutomationQueueModule } from "../components/AutomationQueueModule";
 import { OperacoesPanel } from "../components/OperacoesPanel";
+import { PedroKanban } from "../components/PedroKanban";
 import { RhModule, RH_VIEW_LABELS, type RhView } from "../components/RhModule";
 
 type AutomationInfo = {
@@ -60,6 +63,7 @@ type MatchRow = {
 };
 
 type StatusRow = {
+  id: number;
   sheet_name: string;
   extrato_id: string;
   aba_extrato?: string;
@@ -74,6 +78,7 @@ type StatusRow = {
   ref_sigra: string;
   cliente: string;
   observacao: string;
+  direcao_movimento?: string;
 };
 
 type RunDataset = {
@@ -91,7 +96,7 @@ type DocumentSlot = {
 };
 
 type SectorKey = "financeiro" | "pedro" | "rh" | "operacoes";
-type PlatformView = "inicio" | "configuracoes" | SectorKey;
+type PlatformView = "inicio" | "configuracoes" | "fila" | SectorKey;
 type OperationsView = "importacao" | "exportacao";
 type AuthUser = {
   id: number;
@@ -155,9 +160,11 @@ const SLOT_CONFIG: Record<string, DocumentSlot[]> = {
   ],
 };
 
+const FILA_NAV = { key: "fila" as const, label: "Fila", subtitle: "Solicitações de automação" };
+
 const SECTOR_MENU: { key: SectorKey; label: string; subtitle: string }[] = [
   { key: "financeiro", label: "Financeiro", subtitle: "Conciliações e caixa" },
-  { key: "pedro", label: "Pedro", subtitle: "F/ Alinhamento" },
+  { key: "pedro", label: "Importação", subtitle: "Processos SigraWeb" },
   { key: "rh", label: "RH", subtitle: "Pessoal e folha" },
   { key: "operacoes", label: "Operações", subtitle: "Rotinas internas" },
 ];
@@ -184,8 +191,9 @@ const LANDING_SHOWCASE = [
 function platformPageTitle(view: PlatformView): string {
   if (view === "inicio") return "Início";
   if (view === "configuracoes") return "Configurações";
+  if (view === "fila") return "Fila de Automações";
   if (view === "financeiro") return "Setor Financeiro";
-  if (view === "pedro") return "Setor Pedro";
+  if (view === "pedro") return "Importação";
   if (view === "rh") return "RH";
   return "Setor de Operações";
 }
@@ -193,6 +201,7 @@ function platformPageTitle(view: PlatformView): string {
 function platformPageSubtitle(view: PlatformView): string {
   if (view === "inicio") return "Visão geral da plataforma KIVO";
   if (view === "configuracoes") return "Conta, segurança e preferências do ambiente";
+  if (view === "fila") return FILA_NAV.subtitle;
   return SECTOR_MENU.find((s) => s.key === view)?.subtitle ?? "";
 }
 
@@ -221,6 +230,13 @@ function resolvePlatformHeading(
   if (activeView === "configuracoes") {
     return { title: "Configurações", subtitle: platformPageSubtitle("configuracoes"), tag: "Sistema" };
   }
+  if (activeView === "fila") {
+    return {
+      title: "Fila de Automações",
+      subtitle: "Solicitações · acompanhamento em tempo real",
+      tag: "Central",
+    };
+  }
   if (activeView === "financeiro") {
     return {
       title: "Financeiro",
@@ -236,6 +252,13 @@ function resolvePlatformHeading(
     return {
       title: "Recursos Humanos",
       subtitle: RH_VIEW_LABELS[rhView],
+      tag: "Módulo ativo",
+    };
+  }
+  if (activeView === "pedro") {
+    return {
+      title: "Importação",
+      subtitle: "Processos de Importação · SigraWeb",
       tag: "Módulo ativo",
     };
   }
@@ -263,6 +286,12 @@ function resolveDocumentTitle(
   }
   if (activeView === "rh") {
     return `${RH_VIEW_LABELS[rhView]} — RH — KIVO`;
+  }
+  if (activeView === "pedro") {
+    return "Processos de Importação — Importação — KIVO";
+  }
+  if (activeView === "fila") {
+    return "Fila de Automações — KIVO";
   }
   return `${platformPageTitle(activeView)} — KIVO`;
 }
@@ -300,26 +329,6 @@ function parseApiErrorDetail(detail: unknown, fallback: string): string {
   return fallback;
 }
 
-function SettingsRailIcon() {
-  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
-  return (
-    <svg {...common}>
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6" />
-    </svg>
-  );
-}
-
-function HomeRailIcon() {
-  const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
-  return (
-    <svg {...common}>
-      <path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 01-1.5 1.5H5.5A1.5 1.5 0 014 19v-8.5z" />
-      <path d="M9.5 20.5V13h5v7.5" />
-    </svg>
-  );
-}
-
 function SectorRailIcon({ sector }: { sector: SectorKey }) {
   const common = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.6 };
   if (sector === "financeiro") {
@@ -335,8 +344,9 @@ function SectorRailIcon({ sector }: { sector: SectorKey }) {
   if (sector === "pedro") {
     return (
       <svg {...common}>
-        <circle cx="12" cy="8" r="3.5" />
-        <path d="M5 20c0-3.5 3.1-6 7-6s7 2.5 7 6" />
+        <path d="M4 7h16v10H4z" />
+        <path d="M8 7V5h8v2" />
+        <path d="M9 12h6" />
       </svg>
     );
   }
@@ -363,6 +373,117 @@ function statusClass(status: string): string {
   if (s.includes("running")) return "status-pill status-running";
   if (s.includes("failed")) return "status-pill status-failed";
   return "status-pill status-queued";
+}
+
+const STATUS_CONCILIADO = "✅ Conciliado";
+const STATUS_PENDENTE = "❌ Pendente";
+
+function normalizeConciliationStatus(status: string): string {
+  const value = (status || "").toLowerCase();
+  if (value.includes("conciliado")) return STATUS_CONCILIADO;
+  if (value.includes("pendente")) return STATUS_PENDENTE;
+  return status || STATUS_PENDENTE;
+}
+
+function inferDirecaoMovimento(row: StatusRow): "entrada" | "saida" | "" {
+  const explicit = (row.direcao_movimento || "").trim().toLowerCase();
+  if (explicit === "entrada" || explicit === "saida") {
+    return explicit;
+  }
+  const desc = (row.favorecido_descricao || "").toUpperCase();
+  if (/(RECEBIMENTO|RECEBIDO|CREDITO|CRÉDITO|PIX RECEBIDO)/.test(desc)) return "entrada";
+  if (/(PAGAMENTO|ENVIADO|DEBITO|DÉBITO|SISPAG|PUCOMEX|AFRMM|TARIFA|IOF)/.test(desc)) return "saida";
+  return "";
+}
+
+function parseValorInput(value: string): number {
+  const cleaned = value.replace(/R\$/gi, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatValorInput(value: number): string {
+  return Number(value || 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function ConciliacaoStatusPicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  onChange: (next: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const normalized = normalizeConciliationStatus(value);
+  const isConciliado = normalized === STATUS_CONCILIADO;
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [open]);
+
+  function selectOption(next: string) {
+    setOpen(false);
+    if (next !== normalized) {
+      onChange(next);
+    }
+  }
+
+  return (
+    <div ref={rootRef} className={`conciliacao-status-picker${open ? " is-open" : ""}`}>
+      <button
+        type="button"
+        className={`conciliacao-status-trigger ${
+          isConciliado ? "conciliacao-status-select--conciliado" : "conciliacao-status-select--pendente"
+        }`}
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          if (!disabled) setOpen((current) => !current);
+        }}
+      >
+        <span>{normalized}</span>
+        <span className="conciliacao-status-trigger-caret" aria-hidden="true">
+          ▾
+        </span>
+      </button>
+      {open && (
+        <div className="conciliacao-status-menu" role="listbox">
+          <button
+            type="button"
+            className="conciliacao-status-option"
+            role="option"
+            aria-selected={isConciliado}
+            onClick={() => selectOption(STATUS_CONCILIADO)}
+          >
+            {STATUS_CONCILIADO}
+          </button>
+          <button
+            type="button"
+            className="conciliacao-status-option"
+            role="option"
+            aria-selected={!isConciliado}
+            onClick={() => selectOption(STATUS_PENDENTE)}
+          >
+            {STATUS_PENDENTE}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const EXTRATO_TAB_MONTH_ORDER = [
@@ -628,6 +749,8 @@ export default function HomePage() {
   });
   const [dataset, setDataset] = useState<RunDataset | null>(null);
   const [datasetError, setDatasetError] = useState("");
+  const [statusEditError, setStatusEditError] = useState("");
+  const [statusRowSaving, setStatusRowSaving] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [runsRefreshing, setRunsRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -1407,6 +1530,37 @@ export default function HomePage() {
     setLiveRun(data);
   }
 
+  async function patchStatusRow(rowId: number, patch: Partial<StatusRow>) {
+    if (!selectedRun?.id || isSelectedRunActive) return;
+    setStatusEditError("");
+    setStatusRowSaving((prev) => ({ ...prev, [rowId]: true }));
+    try {
+      const res = await apiFetch(`/runs/${selectedRun.id}/status-rows/${rowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        const detail = typeof payload?.detail === "string" ? payload.detail : "Não foi possível salvar a linha.";
+        throw new Error(detail);
+      }
+      const updated = (await res.json()) as StatusRow;
+      setDataset((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          statuses: prev.statuses.map((row) => (row.id === rowId ? { ...row, ...updated } : row)),
+        };
+      });
+      await loadDataset(selectedRun.id, selectedRun.status);
+    } catch (e) {
+      setStatusEditError(e instanceof Error ? e.message : "Erro ao salvar alteração.");
+    } finally {
+      setStatusRowSaving((prev) => ({ ...prev, [rowId]: false }));
+    }
+  }
+
   async function loadDataset(runId: number, runStatus?: string) {
     try {
       setDatasetError("");
@@ -1554,9 +1708,13 @@ export default function HomePage() {
       if (token) setAuthToken(token);
       const params = new URLSearchParams(window.location.search);
       const resetFromUrl = params.get("reset");
+      const viewFromUrl = params.get("view");
       if (resetFromUrl) {
         setResetToken(resetFromUrl);
         setGuestView("reset");
+        window.history.replaceState({}, "", window.location.pathname);
+      } else if (viewFromUrl === "fila" || viewFromUrl === "configuracoes") {
+        setActiveView(viewFromUrl);
         window.history.replaceState({}, "", window.location.pathname);
       }
     }
@@ -1706,6 +1864,11 @@ export default function HomePage() {
   useEffect(() => {
     const useConfigBg = Boolean(authToken) && activeView === "configuracoes";
     document.documentElement.setAttribute("data-kivo-bg", useConfigBg ? "config" : "degrade");
+    if (authToken) {
+      document.documentElement.setAttribute("data-kivo-layout", "fullscreen");
+    } else {
+      document.documentElement.removeAttribute("data-kivo-layout");
+    }
   }, [authToken, activeView]);
 
   const pageHeading = useMemo(
@@ -2193,67 +2356,6 @@ export default function HomePage() {
   return (
     <div className="platform-shell">
       <div className="platform-frame">
-        <aside className="platform-rail" aria-label="Navegação rápida">
-          <button
-            type="button"
-            className="platform-rail-logo-btn"
-            onClick={() => setActiveView("inicio")}
-            title="KIVO — Início"
-          >
-            <Image
-              src="/brand/kivo-logotipo.png"
-              alt="KIVO"
-              width={64}
-              height={18}
-              className="platform-rail-logo"
-            />
-          </button>
-          <nav className="platform-rail-nav">
-            <button
-              type="button"
-              className={`platform-rail-btn ${activeView === "inicio" ? "active" : ""}`}
-              onClick={() => setActiveView("inicio")}
-              title="Início"
-              aria-label="Início"
-            >
-              <HomeRailIcon />
-            </button>
-            {visibleSectors.map((sector) => (
-              <button
-                key={sector.key}
-                type="button"
-                className={`platform-rail-btn ${activeView === sector.key ? "active" : ""}`}
-                onClick={() => setActiveView(sector.key)}
-                title={`${sector.label} — ${sector.subtitle}`}
-                aria-label={sector.label}
-              >
-                <SectorRailIcon sector={sector.key} />
-              </button>
-            ))}
-          </nav>
-          <button
-            type="button"
-            className={`platform-rail-btn platform-rail-btn--settings ${activeView === "configuracoes" ? "active" : ""}`}
-            onClick={() => setActiveView("configuracoes")}
-            title={
-              pendingCount > 0
-                ? `Configurações (${pendingCount} cadastro${pendingCount === 1 ? "" : "s"} pendente${pendingCount === 1 ? "" : "s"})`
-                : "Configurações"
-            }
-            aria-label="Configurações"
-          >
-            <SettingsRailIcon />
-            {currentUser.role === "admin" && pendingCount > 0 && (
-              <span className="platform-nav-badge" aria-hidden="true">
-                {pendingCount > 9 ? "9+" : pendingCount}
-              </span>
-            )}
-          </button>
-          <div className="platform-rail-avatar" title={`${currentUser.username} (${currentUser.role})`}>
-            {currentUser.username.charAt(0).toUpperCase()}
-          </div>
-        </aside>
-
         <div className="platform-dashboard-wrap">
           <div
             className={`platform-dashboard${
@@ -2267,7 +2369,11 @@ export default function HomePage() {
                       ? " platform-dashboard--centered platform-dashboard--operacoes"
                       : activeView === "rh"
                         ? " platform-dashboard--rh"
-                        : " platform-dashboard--centered platform-dashboard--module"
+                        : activeView === "pedro"
+                          ? " platform-dashboard--pedro"
+                          : activeView === "fila"
+                            ? " platform-dashboard--fila"
+                            : " platform-dashboard--centered platform-dashboard--module"
             }`}
           >
             <header className="platform-page-header platform-page-header--animate">
@@ -2291,8 +2397,7 @@ export default function HomePage() {
                   </span>
                 </h2>
                 <p className="platform-home-lead">
-                  Escolha um setor para começar. Você também pode usar a barra lateral ou a navegação
-                  inferior.
+                  Escolha um setor para começar. Use a navegação inferior para trocar de módulo.
                 </p>
               </div>
               <div className="platform-home-hero-mascot" aria-hidden="true">
@@ -2328,6 +2433,26 @@ export default function HomePage() {
                   </span>
                 </button>
               ))}
+              <button
+                type="button"
+                className="platform-home-module platform-home-module--fila"
+                onClick={() => setActiveView("fila")}
+              >
+                <span className="platform-home-module-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+                    <path d="M5 6h14v12H5z" />
+                    <path d="M8 10h8M8 14h5" />
+                    <path d="M9 6V4h6v2" />
+                  </svg>
+                </span>
+                <span className="platform-home-module-body">
+                  <strong>{FILA_NAV.label}</strong>
+                  <span className="platform-home-module-desc">{FILA_NAV.subtitle}</span>
+                </span>
+                <span className="platform-home-module-arrow" aria-hidden="true">
+                  →
+                </span>
+              </button>
             </div>
 
             <p className="platform-home-assistant-hint">
@@ -2653,6 +2778,8 @@ export default function HomePage() {
                         <p className="platform-settings-feedback platform-settings-feedback--ok">{adminMessage}</p>
                       )}
                     </div>
+
+                    <AutomationClientAccessPanel apiFetch={apiFetch} />
                   </div>
                 </section>
               )}
@@ -2666,26 +2793,36 @@ export default function HomePage() {
           </section>
         ) : activeView === "operacoes" ? (
           <section className="platform-operacoes" aria-label="Painel de operações">
-            <div className="platform-operacoes-flows platform-operacoes-flows--compact" role="tablist" aria-label="Fluxos de comércio exterior">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={operationsView === "importacao"}
-                className={`platform-operacoes-flow-tab ${operationsView === "importacao" ? "active" : ""}`}
-                onClick={() => setOperationsView("importacao")}
+            <header className="platform-operacoes-page-head">
+              <div className="platform-operacoes-page-head-text">
+                <h2>Comex</h2>
+                <p>Automações por equipe e cliente</p>
+              </div>
+              <div
+                className="platform-operacoes-flows platform-operacoes-flows--compact"
+                role="tablist"
+                aria-label="Equipes"
               >
-                Importação
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={operationsView === "exportacao"}
-                className={`platform-operacoes-flow-tab ${operationsView === "exportacao" ? "active" : ""}`}
-                onClick={() => setOperationsView("exportacao")}
-              >
-                Exportação
-              </button>
-            </div>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={operationsView === "importacao"}
+                  className={`platform-operacoes-flow-tab ${operationsView === "importacao" ? "active" : ""}`}
+                  onClick={() => setOperationsView("importacao")}
+                >
+                  Importação
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={operationsView === "exportacao"}
+                  className={`platform-operacoes-flow-tab ${operationsView === "exportacao" ? "active" : ""}`}
+                  onClick={() => setOperationsView("exportacao")}
+                >
+                  Exportação
+                </button>
+              </div>
+            </header>
 
             <OperacoesPanel
               apiFetch={apiFetch}
@@ -2696,6 +2833,18 @@ export default function HomePage() {
           </section>
         ) : activeView === "rh" ? (
           authToken ? <RhModule apiBase={API_BASE} authToken={authToken} /> : null
+        ) : activeView === "pedro" ? (
+          authToken ? <PedroKanban apiBase={API_BASE} authToken={authToken} /> : null
+        ) : activeView === "fila" ? (
+          authToken ? (
+            <AutomationQueueModule
+              apiBase={API_BASE}
+              authToken={authToken}
+              username={currentUser.username}
+              userSector={currentUser.sector}
+              isAdmin={currentUser.role === "admin"}
+            />
+          ) : null
         ) : activeView !== "financeiro" ? (
           <section className="panel platform-sector-empty">
             <h2>{SECTOR_MENU.find((item) => item.key === activeView)?.label} em breve</h2>
@@ -3125,10 +3274,12 @@ export default function HomePage() {
                   />
                 </div>
                 <p className="subtitle" style={{ marginBottom: 8 }}>
-                  Mostrando {sortedStatuses.length} linha(s) na visão atual.
+                  Mostrando {sortedStatuses.length} linha(s) na visão atual. Edite os campos diretamente na tabela;
+                  as alterações são salvas automaticamente.
                 </p>
+                {statusEditError && <p className="error">{statusEditError}</p>}
                 <div className="table-wrapper table-wrapper--scroll planilha-table-scroll">
-                  <table>
+                  <table className="conciliacao-edit-table">
                     <thead>
                       <tr>
                         {bankView === "bb" && <th>Aba extrato</th>}
@@ -3150,27 +3301,123 @@ export default function HomePage() {
                         </th>
                         <th>Ref. Sigra</th>
                         <th>Status</th>
+                        <th>Observação</th>
                         <th>Qtd Comp.</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedStatuses.map((s, idx) => (
-                        <tr key={`${s.sheet_name}-${s.extrato_id}-${s.aba_extrato ?? ""}-${idx}`}>
-                          {bankView === "bb" && (
-                            <td>{s.aba_extrato ? extratoTabLabelFromKey(extratoTabKeyFromRow(s)) : "-"}</td>
-                          )}
-                          <td>{s.extrato_id}</td>
-                          <td>{s.data}</td>
-                          <td>{s.favorecido_descricao}</td>
-                          <td>{s.valor_extrato.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-                          <td>{s.ref_sigra || "-"}</td>
-                          <td>{s.status}</td>
-                          <td>{s.qtd_comprovantes}</td>
-                        </tr>
-                      ))}
+                      {sortedStatuses.map((s, idx) => {
+                        const direcao = inferDirecaoMovimento(s);
+                        const rowBusy = Boolean(statusRowSaving[s.id]);
+                        const canEdit = Boolean(s.id) && !isSelectedRunActive;
+                        return (
+                          <tr
+                            key={
+                              s.id
+                                ? `status-${s.id}-${s.data}-${s.valor_extrato}-${s.status}-${s.direcao_movimento ?? ""}-${s.observacao}-${s.favorecido_descricao}`
+                                : `${s.sheet_name}-${s.extrato_id}-${s.aba_extrato ?? ""}-${idx}`
+                            }
+                            className={rowBusy ? "conciliacao-row-saving" : undefined}
+                          >
+                            {bankView === "bb" && (
+                              <td>{s.aba_extrato ? extratoTabLabelFromKey(extratoTabKeyFromRow(s)) : "-"}</td>
+                            )}
+                            <td>{s.extrato_id}</td>
+                            <td>
+                              <input
+                                className="conciliacao-cell-input conciliacao-cell-input--date"
+                                defaultValue={s.data}
+                                disabled={!canEdit}
+                                onBlur={(e) => {
+                                  if (!canEdit || e.target.value === s.data) return;
+                                  patchStatusRow(s.id, { data: e.target.value });
+                                }}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                className="conciliacao-cell-input"
+                                defaultValue={s.favorecido_descricao}
+                                disabled={!canEdit}
+                                onBlur={(e) => {
+                                  if (!canEdit || e.target.value === s.favorecido_descricao) return;
+                                  patchStatusRow(s.id, { favorecido_descricao: e.target.value });
+                                }}
+                              />
+                            </td>
+                            <td>
+                              <div className="conciliacao-valor-cell">
+                                <button
+                                  type="button"
+                                  className={`conciliacao-direcao-btn conciliacao-direcao-btn--${direcao || "neutro"}`}
+                                  title={
+                                    direcao === "entrada"
+                                      ? "Entrou na conta (clique para alternar)"
+                                      : direcao === "saida"
+                                        ? "Saiu da conta (clique para alternar)"
+                                        : "Definir se entrou ou saiu"
+                                  }
+                                  disabled={!canEdit}
+                                  onClick={() => {
+                                    if (!canEdit) return;
+                                    const next = direcao === "entrada" ? "saida" : "entrada";
+                                    patchStatusRow(s.id, { direcao_movimento: next });
+                                  }}
+                                >
+                                  {direcao === "entrada" ? "↑" : direcao === "saida" ? "↓" : "↕"}
+                                </button>
+                                <input
+                                  className="conciliacao-cell-input conciliacao-cell-input--valor"
+                                  defaultValue={formatValorInput(s.valor_extrato)}
+                                  disabled={!canEdit}
+                                  onBlur={(e) => {
+                                    if (!canEdit) return;
+                                    const nextValor = parseValorInput(e.target.value);
+                                    if (nextValor === Number(s.valor_extrato || 0)) return;
+                                    patchStatusRow(s.id, { valor_extrato: nextValor });
+                                  }}
+                                />
+                              </div>
+                            </td>
+                            <td>
+                              <input
+                                className="conciliacao-cell-input"
+                                defaultValue={s.ref_sigra === "-" ? "" : s.ref_sigra}
+                                disabled={!canEdit}
+                                placeholder="-"
+                                onBlur={(e) => {
+                                  if (!canEdit) return;
+                                  const nextRef = e.target.value.trim() || "-";
+                                  if (nextRef === (s.ref_sigra || "-")) return;
+                                  patchStatusRow(s.id, { ref_sigra: nextRef });
+                                }}
+                              />
+                            </td>
+                            <td>
+                              <ConciliacaoStatusPicker
+                                value={s.status}
+                                disabled={!canEdit}
+                                onChange={(next) => patchStatusRow(s.id, { status: next })}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                className="conciliacao-cell-input"
+                                defaultValue={s.observacao}
+                                disabled={!canEdit}
+                                onBlur={(e) => {
+                                  if (!canEdit || e.target.value === (s.observacao || "")) return;
+                                  patchStatusRow(s.id, { observacao: e.target.value });
+                                }}
+                              />
+                            </td>
+                            <td>{s.qtd_comprovantes}</td>
+                          </tr>
+                        );
+                      })}
                       {sortedStatuses.length === 0 && (
                         <tr>
-                          <td colSpan={bankView === "bb" ? 8 : 7}>Sem linhas para os filtros selecionados.</td>
+                          <td colSpan={bankView === "bb" ? 9 : 8}>Sem linhas para os filtros selecionados.</td>
                         </tr>
                       )}
                     </tbody>
@@ -3328,6 +3575,13 @@ export default function HomePage() {
                   {sector.label}
                 </button>
               ))}
+              <button
+                type="button"
+                className={`platform-nav-pill ${activeView === "fila" ? "active" : ""}`}
+                onClick={() => setActiveView("fila")}
+              >
+                {FILA_NAV.label}
+              </button>
               <span className="platform-bottomnav-divider" aria-hidden="true" />
               <button
                 type="button"

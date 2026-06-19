@@ -1,5 +1,6 @@
 import "./globals.css";
 import "./responsive.css";
+import "./fila.css";
 import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
 import { KivoBackground } from "../components/KivoBackground";

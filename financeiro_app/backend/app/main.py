@@ -7,14 +7,19 @@ from sqlalchemy import inspect, text
 
 from .config import settings
 from .db import Base, SessionLocal, engine
-from .routers import accounts, auth, automations, rh, runs, sector_automations, sector_runs
+from .routers import accounts, auth, automation_clients, automations, fila, pedro, rh, runs, sector_automations, sector_runs
 from .services.account_service import backfill_run_accounts, ensure_default_accounts
 from .services.auth_service import (
     cleanup_expired_password_resets,
     cleanup_expired_sessions,
     ensure_default_users,
 )
-from .services.automation_catalog import ensure_default_sector_automations
+from .services.automation_catalog import (
+    ensure_default_automation_clients,
+    ensure_default_sector_automations,
+    ensure_global_automations,
+    ensure_yaro_descricoes_automation,
+)
 from .services.rh_service import ensure_rh_seed_data
 from .services.run_service import mark_stale_runs_as_failed, recover_stale_runs_on_startup
 
@@ -50,6 +55,30 @@ def ensure_schema_compatibility() -> None:
             if "aba_extrato" not in current_columns:
                 conn.execute(text(f"ALTER TABLE run_status_rows ADD COLUMN aba_extrato {text_type} NOT NULL DEFAULT ''"))
 
+            if "direcao_movimento" not in current_columns:
+                conn.execute(
+                    text("ALTER TABLE run_status_rows ADD COLUMN direcao_movimento VARCHAR(20) NOT NULL DEFAULT ''")
+                )
+
+            if "updated_at" not in current_columns:
+                if dialect in {"postgresql", "postgres"}:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE run_status_rows ADD COLUMN updated_at TIMESTAMP "
+                            "NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                        )
+                    )
+                else:
+                    # SQLite não aceita DEFAULT CURRENT_TIMESTAMP em ALTER TABLE.
+                    conn.execute(text("ALTER TABLE run_status_rows ADD COLUMN updated_at DATETIME"))
+                    conn.execute(
+                        text(
+                            "UPDATE run_status_rows "
+                            "SET updated_at = COALESCE(created_at, datetime('now')) "
+                            "WHERE updated_at IS NULL"
+                        )
+                    )
+
         if "app_users" in table_names:
             user_columns = {col["name"] for col in inspector.get_columns("app_users")}
             if "approval_status" not in user_columns:
@@ -57,6 +86,15 @@ def ensure_schema_compatibility() -> None:
                     text("ALTER TABLE app_users ADD COLUMN approval_status VARCHAR(30) NOT NULL DEFAULT 'approved'")
                 )
                 conn.execute(text("UPDATE app_users SET approval_status = 'approved' WHERE approval_status IS NULL"))
+            if "contact_email" not in user_columns:
+                conn.execute(text("ALTER TABLE app_users ADD COLUMN contact_email VARCHAR(180) NOT NULL DEFAULT ''"))
+
+        if "automation_queue_tickets" in table_names:
+            ticket_columns = {col["name"] for col in inspector.get_columns("automation_queue_tickets")}
+            if "requester_email" not in ticket_columns:
+                conn.execute(
+                    text("ALTER TABLE automation_queue_tickets ADD COLUMN requester_email VARCHAR(180) NOT NULL DEFAULT ''")
+                )
 
         if "rh_calendar_events" in table_names:
             event_columns = {col["name"] for col in inspector.get_columns("rh_calendar_events")}
@@ -71,6 +109,17 @@ def ensure_schema_compatibility() -> None:
                 conn.execute(text("ALTER TABLE reconciliation_runs ADD COLUMN account_id INTEGER"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_reconciliation_runs_account_id ON reconciliation_runs (account_id)"))
 
+        if "sector_automations" in table_names:
+            auto_columns = {col["name"] for col in inspector.get_columns("sector_automations")}
+            if "client_slug" not in auto_columns:
+                conn.execute(
+                    text("ALTER TABLE sector_automations ADD COLUMN client_slug VARCHAR(80) NOT NULL DEFAULT ''")
+                )
+            if "visibility" not in auto_columns:
+                conn.execute(
+                    text("ALTER TABLE sector_automations ADD COLUMN visibility VARCHAR(20) NOT NULL DEFAULT 'flow'")
+                )
+
 
 @app.on_event("startup")
 def startup() -> None:
@@ -84,7 +133,10 @@ def startup() -> None:
         ensure_default_accounts(db)
         backfill_run_accounts(db)
         ensure_rh_seed_data(db)
+        ensure_default_automation_clients(db)
         ensure_default_sector_automations(db, settings.automation_workspace)
+        ensure_yaro_descricoes_automation(db, settings.automation_workspace)
+        ensure_global_automations(db, settings.automation_workspace)
     finally:
         db.close()
     if settings.recover_interrupted_runs:
@@ -104,5 +156,8 @@ app.include_router(accounts.router)
 app.include_router(runs.router)
 app.include_router(auth.router)
 app.include_router(rh.router)
+app.include_router(pedro.router)
+app.include_router(fila.router)
+app.include_router(automation_clients.router)
 app.include_router(sector_automations.router)
 app.include_router(sector_runs.router)

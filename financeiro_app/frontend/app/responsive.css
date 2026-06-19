@@ -875,6 +875,119 @@
   }
 }
 
+/* Plataforma logada — painel edge-to-edge; navegação só na barra inferior */
+html[data-kivo-layout="fullscreen"] {
+  --kivo-frame-width: 100%;
+  --kivo-frame-height: 100dvh;
+  --kivo-shell-pad-x: 0;
+  --kivo-shell-pad-y: 0;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-shell {
+  padding: 0;
+  align-items: stretch;
+  justify-content: stretch;
+  min-height: 100dvh;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-frame {
+  width: 100%;
+  max-width: 100%;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  gap: 0;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-dashboard-wrap {
+  padding-bottom: 0;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-dashboard {
+  border-radius: 0;
+  border-left: none;
+  border-right: none;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  height: 100dvh;
+  overflow: hidden;
+  padding-bottom: clamp(56px, 8vh, 72px);
+}
+
+html[data-kivo-layout="fullscreen"] .platform-dashboard > .platform-page-header {
+  flex-shrink: 0;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-dashboard > .platform-view-pane {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-view-pane--inicio,
+html[data-kivo-layout="fullscreen"] .platform-view-pane--configuracoes,
+html[data-kivo-layout="fullscreen"] .platform-view-pane--operacoes {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-view-pane--configuracoes {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-view-pane--financeiro,
+html[data-kivo-layout="fullscreen"] .platform-view-pane--rh,
+html[data-kivo-layout="fullscreen"] .platform-view-pane--pedro,
+html[data-kivo-layout="fullscreen"] .platform-view-pane--fila {
+  overflow: hidden;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-view-pane--financeiro > .app-shell--financeiro,
+html[data-kivo-layout="fullscreen"] .platform-view-pane--rh > .app-shell--rh,
+html[data-kivo-layout="fullscreen"] .platform-view-pane--pedro > .app-shell--pedro {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+html[data-kivo-layout="fullscreen"] .platform-view-pane--fila > .app-shell--fila {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+html[data-kivo-layout="fullscreen"] .pedro-import-panel {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+html[data-kivo-layout="fullscreen"] .app-shell--pedro {
+  overflow: hidden;
+}
+
+html[data-kivo-layout="fullscreen"] .pedro-import-table-wrap,
+html[data-kivo-layout="fullscreen"] .pedro-import-cards {
+  flex: 1 1 0;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+}
+
+@media (max-width: 768px) {
+  html[data-kivo-layout="fullscreen"] .platform-dashboard {
+    padding-bottom: 58px;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    height: 100dvh;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tab-row,
   .finance-account-tabs,
