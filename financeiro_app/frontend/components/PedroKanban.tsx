@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { KivoLoader, waitMinLoaderTime } from "./KivoLoader";
 
 type PedroKanbanCard = {
   id: number;
@@ -82,6 +83,7 @@ export function PedroKanban({ apiBase, authToken }: PedroKanbanProps) {
 
   const loadKanban = useCallback(
     async (refresh = false) => {
+      const startedAt = Date.now();
       setError("");
       if (refresh) setRefreshing(true);
       else setLoading(true);
@@ -98,6 +100,7 @@ export function PedroKanban({ apiBase, authToken }: PedroKanbanProps) {
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erro ao carregar processos.");
       } finally {
+        if (!refresh) await waitMinLoaderTime(startedAt);
         setLoading(false);
         setRefreshing(false);
       }
@@ -117,8 +120,8 @@ export function PedroKanban({ apiBase, authToken }: PedroKanbanProps) {
   if (loading && !data) {
     return (
       <section className="app-shell app-shell--pedro">
-        <div className="pedro-loading panel">
-          <p className="subtitle">Sincronizando processos de importação com SigraWeb…</p>
+        <div className="module-pane-loading" role="status" aria-live="polite">
+          <KivoLoader size="md" showLabel label="Sincronizando processos de importação com SigraWeb…" />
         </div>
       </section>
     );

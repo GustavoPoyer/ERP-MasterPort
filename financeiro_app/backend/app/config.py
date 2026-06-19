@@ -25,6 +25,10 @@ class Settings:
         ).split(",")
         if origin.strip()
     ]
+    cors_origin_regex: str | None = os.getenv(
+        "CORS_ORIGIN_REGEX",
+        r"http://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3})(:\d+)?",
+    ).strip() or None
     automation_workspace: str = os.getenv("AUTOMATION_WORKSPACE", _default_workspace())
     recover_interrupted_runs: bool = os.getenv("RECOVER_INTERRUPTED_RUNS", "true").strip().lower() == "true"
     frontend_url: str = os.getenv("FRONTEND_URL", "http://localhost:3000").rstrip("/")

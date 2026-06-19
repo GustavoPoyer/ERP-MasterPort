@@ -128,6 +128,10 @@
   min-height: min(420px, 52vh);
 }
 
+.app-shell--pedro .module-pane-loading {
+  min-height: min(420px, 52vh);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .kivo-loader-char,
   .kivo-loader-o {

@@ -112,8 +112,17 @@ type PendingUser = {
   created_at: string;
 };
 
-const runtimeHost = typeof window !== "undefined" && window.location?.hostname ? window.location.hostname : "localhost";
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || `http://${runtimeHost}:8000`;
+function resolveApiBase(): string {
+  const envApiBase = process.env.NEXT_PUBLIC_API_BASE?.trim();
+  const host =
+    typeof window !== "undefined" && window.location?.hostname ? window.location.hostname : "localhost";
+  if (envApiBase && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/i.test(envApiBase)) {
+    return envApiBase.replace(/\/$/, "");
+  }
+  return `http://${host}:8000`;
+}
+
+const API_BASE = resolveApiBase();
 const FAST_POLL_MS = 700;
 const DEFAULT_POLL_MS = 2000;
 const TRIGGER_TIMEOUT_MS = 120000;
@@ -1007,7 +1016,14 @@ export default function HomePage() {
       }
       applyAuthSuccess(payload.access_token, payload.user || null);
     } catch (e) {
-      setAuthError(e instanceof Error ? e.message : "Erro ao autenticar.");
+      const msg = e instanceof Error ? e.message : "Erro ao autenticar.";
+      if (/failed to fetch|networkerror|load failed/i.test(msg)) {
+        setAuthError(
+          `Não foi possível conectar ao servidor (${API_BASE}). Inicie o backend com start_app.ps1 e recarregue a página.`,
+        );
+      } else {
+        setAuthError(msg);
+      }
     } finally {
       setAuthLoading(false);
     }
