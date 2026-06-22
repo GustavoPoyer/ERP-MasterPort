@@ -141,8 +141,8 @@ def list_tickets(
     user: AppUser = Depends(require_current_user),
 ):
     stmt = select(AutomationQueueTicket).order_by(
-        AutomationQueueTicket.updated_at.desc(),
-        AutomationQueueTicket.id.desc(),
+        AutomationQueueTicket.created_at.asc(),
+        AutomationQueueTicket.id.asc(),
     )
     if scope == "mine":
         stmt = stmt.where(AutomationQueueTicket.requester_user_id == user.id)

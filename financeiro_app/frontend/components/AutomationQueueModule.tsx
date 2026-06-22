@@ -174,6 +174,12 @@ export function AutomationQueueModule({
   }, [refreshAll]);
 
   useEffect(() => {
+    if (view === "nova" || tickets.length === 0) return;
+    if (selectedId && tickets.some((ticket) => ticket.id === selectedId)) return;
+    setSelectedId(tickets[0].id);
+  }, [tickets, view, selectedId]);
+
+  useEffect(() => {
     if (!selectedId) return;
     void loadTicketDetail(selectedId).catch((err) => {
       setError(err instanceof Error ? err.message : "Erro ao carregar solicitação.");
@@ -294,7 +300,8 @@ export function AutomationQueueModule({
 
   return (
     <section className="app-shell app-shell--fila">
-      <header className="fila-head panel">
+      <div className="fila-page">
+        <header className="fila-head panel">
         <div className="fila-head-copy">
           <span className="fila-head-eyebrow">Central de demandas</span>
           <h2 className="fila-head-title">Fila de Automações</h2>
@@ -590,6 +597,7 @@ export function AutomationQueueModule({
           </section>
         </div>
       )}
+      </div>
     </section>
   );
 }

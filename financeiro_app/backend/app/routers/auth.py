@@ -83,11 +83,13 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
             )
         raise HTTPException(status_code=409, detail="Este usuário já está em uso. Escolha outro nome.")
 
+    contact_email = (payload.email or "").strip().lower()
     user = AppUser(
         username=username,
         password_hash=hash_password(payload.password),
         sector=sector,
         role="operator",
+        contact_email=contact_email,
         is_active=0,
         approval_status="pending",
     )

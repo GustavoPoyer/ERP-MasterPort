@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image";
+import { LandingModulesShowcase } from "../components/LandingModulesShowcase";
+import { LandingIsometricStack } from "../components/LandingIsometricStack";
 import { KivoAssistant } from "../components/KivoAssistant";
 import { KivoRobot } from "../components/KivoRobot";
 import { AutomationClientAccessPanel } from "../components/AutomationClientAccessPanel";
@@ -177,25 +179,6 @@ const SECTOR_MENU: { key: SectorKey; label: string; subtitle: string }[] = [
   { key: "rh", label: "RH", subtitle: "Pessoal e folha" },
   { key: "operacoes", label: "Operações", subtitle: "Rotinas internas" },
 ];
-
-const LANDING_SHOWCASE = [
-  {
-    key: "financeiro",
-    label: "Financeiro",
-    title: "Painel de conciliação",
-    description: "Monte rodadas para Banco do Brasil e Itaú/SIGRA com upload de extratos e comprovantes.",
-    src: "/brand/landing/financeiro-painel.png",
-    alt: "Painel financeiro do KIVO com KPIs e montagem de rodada de conciliação",
-  },
-  {
-    key: "execucoes",
-    label: "Execuções",
-    title: "Histórico e auditoria",
-    description: "Acompanhe execuções, status, conciliações e logs técnicos em tempo real.",
-    src: "/brand/landing/financeiro-execucoes.png",
-    alt: "Tela de execuções e logs técnicos do módulo financeiro KIVO",
-  },
-] as const;
 
 function platformPageTitle(view: PlatformView): string {
   if (view === "inicio") return "Início";
@@ -607,8 +590,44 @@ function parseBrDateToTs(dateValue: string): number {
   return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
 }
 
+function AuthFieldIcon({ name }: { name: "user" | "mail" | "briefcase" | "lock" }) {
+  const props = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.75, "aria-hidden": true as const };
+  if (name === "user") {
+    return (
+      <svg {...props}>
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5.5 19.5c.8-3.2 3-5 6.5-5s5.7 1.8 6.5 5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (name === "mail") {
+    return (
+      <svg {...props}>
+        <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+        <path d="M4 7l8 6 8-6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (name === "briefcase") {
+    return (
+      <svg {...props}>
+        <rect x="4" y="8" width="16" height="11" rx="2" />
+        <path d="M9 8V6.5A2.5 2.5 0 0 1 11.5 4h1A2.5 2.5 0 0 1 15 6.5V8" strokeLinecap="round" />
+        <path d="M4 12h16" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...props}>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V8.5a4 4 0 0 1 8 0V11" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function AuthPasswordField({
   id,
+  label,
   placeholder,
   value,
   visible,
@@ -616,8 +635,10 @@ function AuthPasswordField({
   autoComplete,
   onChange,
   onEnter,
+  styled = false,
 }: {
   id: string;
+  label?: string;
   placeholder: string;
   value: string;
   visible: boolean;
@@ -625,9 +646,15 @@ function AuthPasswordField({
   autoComplete: string;
   onChange: (value: string) => void;
   onEnter?: () => void;
+  styled?: boolean;
 }) {
-  return (
-    <div className="auth-screen-password-wrap">
+  const field = (
+    <div className={`auth-screen-password-wrap${styled ? " auth-screen-password-wrap--styled" : ""}`}>
+      {styled && (
+        <span className="auth-screen-input-icon">
+          <AuthFieldIcon name="lock" />
+        </span>
+      )}
       <input
         id={id}
         type={visible ? "text" : "password"}
@@ -649,6 +676,65 @@ function AuthPasswordField({
       >
         <KivoRobot mood={visible ? "peek" : "shy"} />
       </button>
+    </div>
+  );
+
+  if (!styled) return field;
+
+  return (
+    <div className="auth-screen-field">
+      {label && (
+        <label className="auth-screen-label" htmlFor={id}>
+          {label}
+        </label>
+      )}
+      <div className="auth-screen-input-wrap">{field}</div>
+    </div>
+  );
+}
+
+function AuthTextField({
+  id,
+  label,
+  placeholder,
+  value,
+  onChange,
+  icon,
+  type = "text",
+  autoComplete,
+  onEnter,
+}: {
+  id: string;
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (value: string) => void;
+  icon: "user" | "mail" | "briefcase" | "lock";
+  type?: string;
+  autoComplete?: string;
+  onEnter?: () => void;
+}) {
+  return (
+    <div className="auth-screen-field">
+      <label className="auth-screen-label" htmlFor={id}>
+        {label}
+      </label>
+      <div className="auth-screen-input-wrap">
+        <span className="auth-screen-input-icon">
+          <AuthFieldIcon name={icon} />
+        </span>
+        <input
+          id={id}
+          type={type}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          autoComplete={autoComplete}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onEnter?.();
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -690,6 +776,8 @@ export default function HomePage() {
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [registerFullName, setRegisterFullName] = useState("");
+  const [registerEmail, setRegisterEmail] = useState("");
   const [registerPasswordConfirm, setRegisterPasswordConfirm] = useState("");
   const [resetToken, setResetToken] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -1030,12 +1118,22 @@ export default function HomePage() {
   }
 
   async function handleRegister() {
-    if (!loginUsername.trim() || !loginPassword.trim()) {
-      setAuthError("Informe usuário e senha.");
+    const fullName = registerFullName.trim();
+    const email = registerEmail.trim().toLowerCase();
+    if (!fullName) {
+      setAuthError("Informe seu nome.");
       return;
     }
-    if (loginUsername.trim().length < 3) {
-      setAuthError("O usuário deve ter pelo menos 3 caracteres.");
+    if (!email || !email.includes("@")) {
+      setAuthError("Informe um e-mail válido.");
+      return;
+    }
+    if (!loginPassword.trim()) {
+      setAuthError("Informe sua senha.");
+      return;
+    }
+    if (email.length < 3) {
+      setAuthError("O e-mail deve ter pelo menos 3 caracteres.");
       return;
     }
     if (loginPassword !== registerPasswordConfirm) {
@@ -1054,9 +1152,11 @@ export default function HomePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          username: loginUsername.trim(),
+          username: email,
           password: loginPassword,
           sector: registerSector,
+          full_name: fullName,
+          email,
         }),
       });
       const payload = await res.json().catch(() => ({}));
@@ -1070,6 +1170,8 @@ export default function HomePage() {
       }
       setLoginPassword("");
       setRegisterPasswordConfirm("");
+      setRegisterFullName("");
+      setRegisterEmail("");
       setAuthMode("login");
       setAuthSuccess(
         payload?.message ||
@@ -1960,7 +2062,28 @@ export default function HomePage() {
             ? "Crie sua conta no KIVO"
             : "Bem-vindo de volta!";
       return (
-        <main className="auth-screen">
+        <main className={`auth-screen${isRegister ? " auth-screen--register" : ""}`}>
+          {isRegister && (
+            <div className="auth-screen-bg" aria-hidden="true">
+              <div className="auth-screen-ambient">
+                <span className="auth-screen-grid" />
+                <span className="auth-screen-spotlight" />
+                <span className="auth-screen-blob auth-screen-blob--1" />
+                <span className="auth-screen-blob auth-screen-blob--2" />
+                <span className="auth-screen-blob auth-screen-blob--3" />
+                <span className="auth-screen-blob auth-screen-blob--4" />
+                <span className="auth-screen-blob auth-screen-blob--center" />
+                <span className="auth-screen-particle auth-screen-particle--1" />
+                <span className="auth-screen-particle auth-screen-particle--2" />
+                <span className="auth-screen-particle auth-screen-particle--3" />
+                <span className="auth-screen-glass auth-screen-glass--left" />
+                <span className="auth-screen-glass auth-screen-glass--right" />
+                <span className="auth-screen-glass auth-screen-glass--bottom" />
+                <span className="auth-screen-noise" />
+                <span className="auth-screen-vignette" />
+              </div>
+            </div>
+          )}
           <button
             type="button"
             className="auth-screen-back"
@@ -1990,7 +2113,15 @@ export default function HomePage() {
               />
             </div>
 
-            <h1 className="auth-screen-title">{authTitle}</h1>
+            <h1 className="auth-screen-title">
+              {isRegister ? (
+                <>
+                  Crie sua conta no <span className="auth-screen-title-accent">KIVO</span>
+                </>
+              ) : (
+                authTitle
+              )}
+            </h1>
             <p className="auth-screen-subtitle">
               {isReset ? (
                 <>
@@ -2053,19 +2184,85 @@ export default function HomePage() {
               )}
             </p>
 
-            {isRegister && (
-              <p className="auth-screen-subtitle auth-screen-register-hint">
-                Após o cadastro, um administrador aprova seu acesso e define o setor liberado.
-              </p>
-            )}
-
             {isForgot && (
               <p className="auth-screen-subtitle auth-screen-register-hint">
                 Por segurança, a resposta é sempre a mesma, mesmo que o usuário não exista.
               </p>
             )}
 
-            <div className="auth-screen-form">
+            <div className={`auth-screen-form${isRegister ? " auth-screen-form--register" : ""}`}>
+              {isRegister ? (
+                <>
+                  <AuthTextField
+                    id="auth-full-name"
+                    label="Seu nome"
+                    placeholder="Digite seu nome completo"
+                    value={registerFullName}
+                    onChange={setRegisterFullName}
+                    icon="user"
+                    autoComplete="name"
+                    onEnter={() => handleRegister().catch(() => null)}
+                  />
+                  <AuthTextField
+                    id="auth-email"
+                    label="Seu e-mail"
+                    placeholder="Digite seu e-mail"
+                    type="email"
+                    value={registerEmail}
+                    onChange={setRegisterEmail}
+                    icon="mail"
+                    autoComplete="email"
+                    onEnter={() => handleRegister().catch(() => null)}
+                  />
+                  <div className="auth-screen-field">
+                    <label className="auth-screen-label" htmlFor="auth-sector">
+                      Setor
+                    </label>
+                    <div className="auth-screen-input-wrap">
+                      <span className="auth-screen-input-icon">
+                        <AuthFieldIcon name="briefcase" />
+                      </span>
+                      <select
+                        id="auth-sector"
+                        className="auth-screen-select"
+                        value={registerSector}
+                        onChange={(e) => setRegisterSector(e.target.value as SectorKey)}
+                      >
+                        {SECTOR_MENU.map((sector) => (
+                          <option key={sector.key} value={sector.key}>
+                            {sector.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <AuthPasswordField
+                    id="auth-password"
+                    label="Sua senha"
+                    placeholder="Crie uma senha"
+                    value={loginPassword}
+                    visible={showAuthPassword}
+                    onToggleVisible={() => setShowAuthPassword((prev) => !prev)}
+                    autoComplete="new-password"
+                    onChange={setLoginPassword}
+                    onEnter={() => handleRegister().catch(() => null)}
+                    styled
+                  />
+                  <AuthPasswordField
+                    id="auth-password-confirm"
+                    label="Confirme sua senha"
+                    placeholder="Confirme sua senha"
+                    value={registerPasswordConfirm}
+                    visible={showAuthPasswordConfirm}
+                    onToggleVisible={() => setShowAuthPasswordConfirm((prev) => !prev)}
+                    autoComplete="new-password"
+                    onChange={setRegisterPasswordConfirm}
+                    onEnter={() => handleRegister().catch(() => null)}
+                    styled
+                  />
+                </>
+              ) : (
+                <>
               {(guestView === "auth" || isForgot) && (
               <div className="auth-screen-field">
                 <input
@@ -2092,26 +2289,6 @@ export default function HomePage() {
                 </div>
               )}
 
-              {isRegister && (
-                <div className="auth-screen-field">
-                  <label className="auth-screen-label" htmlFor="auth-sector">
-                    Setor
-                  </label>
-                  <select
-                    id="auth-sector"
-                    className="auth-screen-select"
-                    value={registerSector}
-                    onChange={(e) => setRegisterSector(e.target.value as SectorKey)}
-                  >
-                    {SECTOR_MENU.map((sector) => (
-                      <option key={sector.key} value={sector.key}>
-                        {sector.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
               {(guestView === "auth" || isReset) && (
               <div className="auth-screen-field">
                 <AuthPasswordField
@@ -2122,37 +2299,31 @@ export default function HomePage() {
                   onToggleVisible={() =>
                     isReset ? setShowNewPassword((prev) => !prev) : setShowAuthPassword((prev) => !prev)
                   }
-                  autoComplete={isRegister || isReset ? "new-password" : "current-password"}
+                  autoComplete={isReset ? "new-password" : "current-password"}
                   onChange={isReset ? setNewPassword : setLoginPassword}
                   onEnter={() => {
                     if (isReset) handleResetPassword().catch(() => null);
-                    else if (isRegister) handleRegister().catch(() => null);
                     else handleLogin().catch(() => null);
                   }}
                 />
               </div>
               )}
 
-              {(isRegister || isReset) && (
+              {isReset && (
                 <div className="auth-screen-field">
                   <AuthPasswordField
                     id="auth-password-confirm"
                     placeholder="Confirme sua senha"
-                    value={isReset ? newPasswordConfirm : registerPasswordConfirm}
-                    visible={isReset ? showNewPasswordConfirm : showAuthPasswordConfirm}
-                    onToggleVisible={() =>
-                      isReset
-                        ? setShowNewPasswordConfirm((prev) => !prev)
-                        : setShowAuthPasswordConfirm((prev) => !prev)
-                    }
+                    value={newPasswordConfirm}
+                    visible={showNewPasswordConfirm}
+                    onToggleVisible={() => setShowNewPasswordConfirm((prev) => !prev)}
                     autoComplete="new-password"
-                    onChange={isReset ? setNewPasswordConfirm : setRegisterPasswordConfirm}
-                    onEnter={() => {
-                      if (isReset) handleResetPassword().catch(() => null);
-                      else handleRegister().catch(() => null);
-                    }}
+                    onChange={setNewPasswordConfirm}
+                    onEnter={() => handleResetPassword().catch(() => null)}
                   />
                 </div>
+              )}
+                </>
               )}
 
               <button
@@ -2224,8 +2395,10 @@ export default function HomePage() {
             />
           </div>
           <nav className="lp-nav">
-            <a href="#lp-journey">Plataforma</a>
             <a href="#lp-modules">Módulos</a>
+            <a href="#lp-mod-financeiro">Financeiro</a>
+            <a href="#lp-mod-rh">RH</a>
+            <a href="#lp-mod-fila">Fila</a>
             <a href="#lp-login">Acesso</a>
           </nav>
         </header>
@@ -2244,7 +2417,7 @@ export default function HomePage() {
               <button
                 type="button"
                 className="lp-btn-ghost"
-                onClick={() => document.getElementById("lp-journey")?.scrollIntoView({ behavior: "smooth" })}
+                onClick={() => document.getElementById("lp-hero-preview")?.scrollIntoView({ behavior: "smooth" })}
               >
                 Ver a plataforma
                 <span className="lp-chevron" aria-hidden="true">
@@ -2278,63 +2451,13 @@ export default function HomePage() {
           </article>
         </section>
 
-        <section className="lp-flow-section" id="lp-journey">
-          <div className="lp-flow-header">
-            <span className="lp-flow-kicker">COMO OPERAR NA MÉTRICA</span>
-            <h2>Uma jornada simples para operar e escalar.</h2>
-            <p>
-              Da entrada dos documentos ao acompanhamento dos resultados, o fluxo foi pensado para reduzir atrito no dia
-              a dia do financeiro.
-            </p>
-          </div>
-
-          <div className="lp-flow-steps">
-            <article className="lp-flow-step">
-              <span className="lp-flow-index">01</span>
-              <h3>Monte a rodada</h3>
-              <p>Selecione banco, anexe extratos e comprovantes, e valide os arquivos obrigatórios.</p>
-              <div className="lp-screen-preview">
-                <Image
-                  src={LANDING_SHOWCASE[0].src}
-                  alt={LANDING_SHOWCASE[0].alt}
-                  width={640}
-                  height={360}
-                  className="lp-screen-preview-img"
-                />
-              </div>
-            </article>
-            <article className="lp-flow-step">
-              <span className="lp-flow-index">02</span>
-              <h3>Execute em um clique</h3>
-              <p>Dispare a automação e acompanhe o status da execução sem trocar de tela.</p>
-              <div className="lp-screen-preview">
-                <Image
-                  src={LANDING_SHOWCASE[0].src}
-                  alt={LANDING_SHOWCASE[0].alt}
-                  width={640}
-                  height={360}
-                  className="lp-screen-preview-img"
-                />
-              </div>
-            </article>
-            <article className="lp-flow-step">
-              <span className="lp-flow-index">03</span>
-              <h3>Analise e audite</h3>
-              <p>Consulte logs, pendências e histórico consolidado com rastreabilidade ponta a ponta.</p>
-              <div className="lp-screen-preview">
-                <Image
-                  src={LANDING_SHOWCASE[1].src}
-                  alt={LANDING_SHOWCASE[1].alt}
-                  width={640}
-                  height={360}
-                  className="lp-screen-preview-img"
-                />
-              </div>
-            </article>
-          </div>
+        <section className="lp-hero-preview" id="lp-hero-preview" aria-label="Prévia da plataforma">
+          <LandingIsometricStack />
         </section>
 
-        <section className="lp-module-grid" id="lp-modules">
+        <LandingModulesShowcase />
+
+        <section className="lp-module-grid" id="lp-benefits">
           <article className="lp-module-card">
             <span className="lp-feature-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">

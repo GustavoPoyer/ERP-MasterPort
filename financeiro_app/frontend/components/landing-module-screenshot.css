@@ -1,0 +1,235 @@
+.lp-iso-shot {
+  --lp-iso-rotate-x: 11deg;
+  --lp-iso-rotate-y: -14deg;
+  --lp-iso-rotate-z: 1deg;
+  --lp-iso-lift: 0px;
+  --lp-iso-scale: 1;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.lp-iso-shot--financeiro {
+  --lp-iso-rotate-y: -18deg;
+  --lp-iso-rotate-x: 13deg;
+}
+
+.lp-iso-shot--rh {
+  --lp-iso-rotate-y: -15deg;
+  --lp-iso-rotate-x: 11deg;
+}
+
+.lp-iso-shot--fila {
+  --lp-iso-rotate-y: -12deg;
+  --lp-iso-rotate-x: 9deg;
+}
+
+.lp-iso-shot-stage {
+  position: relative;
+  padding: 18px 12px 28px;
+  perspective: 1400px;
+  transform-style: preserve-3d;
+}
+
+.lp-iso-shot-plate {
+  position: absolute;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(12, 12, 14, 0.92);
+  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  transition:
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.5s ease,
+    box-shadow 0.5s ease;
+}
+
+.lp-iso-shot-plate--far {
+  inset: 26px 28px 34px 8px;
+  transform: rotateX(14deg) rotateY(-20deg) translateZ(-48px);
+  opacity: 0.35;
+}
+
+.lp-iso-shot-plate--near {
+  inset: 14px 18px 22px 16px;
+  transform: rotateX(12deg) rotateY(-16deg) translateZ(-22px);
+  opacity: 0.55;
+}
+
+.lp-iso-shot-tilt {
+  position: relative;
+  z-index: 2;
+  transform:
+    rotateX(var(--lp-iso-rotate-x))
+    rotateY(var(--lp-iso-rotate-y))
+    rotateZ(var(--lp-iso-rotate-z))
+    translateY(var(--lp-iso-lift))
+    scale(var(--lp-iso-scale));
+  transform-style: preserve-3d;
+  transition:
+    transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.5s ease;
+  will-change: transform;
+}
+
+.lp-module-shot-frame {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 18px;
+  background: #0a0a0a;
+  box-shadow:
+    0 34px 70px rgba(0, 0, 0, 0.55),
+    0 12px 24px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition:
+    box-shadow 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.5s ease;
+}
+
+.lp-module-shot-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: top center;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.lp-module-shot-gloss {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    transparent 38%,
+    transparent 62%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.5s ease;
+}
+
+.lp-iso-shot--financeiro .lp-module-shot-frame {
+  border-color: rgba(94, 179, 255, 0.28);
+}
+
+.lp-iso-shot--rh .lp-module-shot-frame {
+  border-color: rgba(217, 249, 157, 0.28);
+}
+
+.lp-iso-shot--fila .lp-module-shot-frame {
+  border-color: rgba(129, 140, 248, 0.32);
+  aspect-ratio: 1024 / 496;
+}
+
+/* —— Hover: levanta e endireita como no mock isométrico —— */
+.lp-iso-shot:hover {
+  --lp-iso-rotate-x: 4deg;
+  --lp-iso-rotate-y: -6deg;
+  --lp-iso-rotate-z: 0deg;
+  --lp-iso-lift: -14px;
+  --lp-iso-scale: 1.035;
+}
+
+.lp-iso-shot--financeiro:hover {
+  --lp-iso-rotate-y: -8deg;
+}
+
+.lp-iso-shot--rh:hover {
+  --lp-iso-rotate-y: -7deg;
+}
+
+.lp-iso-shot--fila:hover {
+  --lp-iso-rotate-y: -5deg;
+}
+
+.lp-iso-shot:hover .lp-iso-shot-plate--far {
+  transform: rotateX(10deg) rotateY(-14deg) translateZ(-62px) translateY(6px);
+  opacity: 0.28;
+}
+
+.lp-iso-shot:hover .lp-iso-shot-plate--near {
+  transform: rotateX(8deg) rotateY(-10deg) translateZ(-34px) translateY(4px);
+  opacity: 0.42;
+}
+
+.lp-iso-shot:hover .lp-module-shot-frame {
+  box-shadow:
+    0 48px 90px rgba(0, 0, 0, 0.62),
+    0 20px 36px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.lp-iso-shot--financeiro:hover .lp-module-shot-frame {
+  border-color: rgba(94, 179, 255, 0.5);
+  box-shadow:
+    0 48px 90px rgba(0, 0, 0, 0.62),
+    0 0 40px rgba(94, 179, 255, 0.12);
+}
+
+.lp-iso-shot--rh:hover .lp-module-shot-frame {
+  border-color: rgba(217, 249, 157, 0.45);
+  box-shadow:
+    0 48px 90px rgba(0, 0, 0, 0.62),
+    0 0 40px rgba(217, 249, 157, 0.1);
+}
+
+.lp-iso-shot--fila:hover .lp-module-shot-frame {
+  border-color: rgba(129, 140, 248, 0.5);
+  box-shadow:
+    0 48px 90px rgba(0, 0, 0, 0.62),
+    0 0 40px rgba(129, 140, 248, 0.14);
+}
+
+.lp-iso-shot:hover .lp-module-shot-img {
+  transform: scale(1.02);
+}
+
+.lp-iso-shot:hover .lp-module-shot-gloss {
+  opacity: 0.72;
+}
+
+@media (max-width: 1140px) {
+  .lp-iso-shot-stage {
+    padding: 8px 0 16px;
+  }
+
+  .lp-iso-shot-plate {
+    display: none;
+  }
+
+  .lp-iso-shot,
+  .lp-iso-shot:hover {
+    --lp-iso-rotate-x: 0deg;
+    --lp-iso-rotate-y: 0deg;
+    --lp-iso-rotate-z: 0deg;
+    --lp-iso-lift: 0px;
+    --lp-iso-scale: 1;
+  }
+
+  .lp-iso-shot:hover .lp-module-shot-frame {
+    transform: translateY(-6px);
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-iso-shot-tilt,
+  .lp-iso-shot-plate,
+  .lp-module-shot-frame,
+  .lp-module-shot-img,
+  .lp-module-shot-gloss {
+    transition: none;
+  }
+
+  .lp-iso-shot:hover {
+    --lp-iso-lift: 0px;
+    --lp-iso-scale: 1;
+  }
+}
