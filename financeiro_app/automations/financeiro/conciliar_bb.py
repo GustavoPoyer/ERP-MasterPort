@@ -48,6 +48,46 @@ TOLERANCIA_DATA = 2
 # Tolerância de valor (centavos) - extrato pode vir arredondado; aceita até N centavos de diferença
 TOLERANCIA_CENTAVOS = 10
 
+# Limites de performance na busca de combinações (evita reprocessar por muito tempo sem match)
+MAX_CANDIDATOS_BB = 35
+MAX_COMBINACOES_EXAUSTIVA_BB = 6000
+MAX_ESTADOS_SUBSET_SUM = 40000
+BB_VERBOSE_MATCH = os.environ.get("BB_VERBOSE_MATCH", "").strip().lower() in ("1", "true", "yes", "sim")
+
+
+def _bb_log(msg: str) -> None:
+    if BB_VERBOSE_MATCH:
+        print(msg)
+
+
+def _filtrar_comprovantes_por_data(comprovantes: pd.DataFrame, data_extrato, tolerancia: int) -> pd.DataFrame:
+    if comprovantes is None or len(comprovantes) == 0:
+        return comprovantes
+    dias = (comprovantes["data"] - data_extrato).abs().dt.days
+    return comprovantes.loc[dias <= tolerancia].copy()
+
+
+def _limitar_candidatos_bb(comprovantes: pd.DataFrame, valor_extrato: float, limite: int) -> pd.DataFrame:
+    if len(comprovantes) <= limite:
+        return comprovantes
+    out = comprovantes.copy()
+    out["_valor_abs"] = out["valor"].abs()
+    alvo_medio = max(valor_extrato / 5, 1.0)
+    out["_dist"] = (out["_valor_abs"] - alvo_medio).abs()
+    out = out.nsmallest(limite, "_dist")
+    return out.drop(columns=["_valor_abs", "_dist"], errors="ignore")
+
+
+def _tentar_match_1_para_1(
+    valor_extrato_centavos: int,
+    comprovantes: pd.DataFrame,
+) -> list | None:
+    for idx, row in comprovantes.iterrows():
+        valor_comp_centavos = int(round(abs(float(row.get("valor", 0))) * 100))
+        if abs(valor_comp_centavos - valor_extrato_centavos) <= TOLERANCIA_CENTAVOS:
+            return [idx]
+    return None
+
 # Caminhos dos arquivos (serão buscados automaticamente na pasta do dia)
 CAMINHO_EXTRATO = None  # Será definido automaticamente
 CAMINHO_COMPROVANTES = None  # Será definido automaticamente
@@ -852,9 +892,11 @@ def encontrar_combinacoes_comprovantes(extrato_row, comprovantes_disponiveis, ma
     data_extrato = extrato_row['data']
     favorecido_extrato = str(extrato_row.get('favorecido_original', '')).upper()
     
-    # Debug: mostra informações do extrato sendo processado
-    print(f"    [DEBUG] Processando extrato: R$ {valor_extrato:,.2f} | Data: {data_extrato} | Favorecido: {favorecido_extrato[:50]}")
-    print(f"    [DEBUG] Comprovantes disponíveis: {len(comprovantes_disponiveis)}")
+    _bb_log(
+        f"    [DEBUG] Processando extrato: R$ {valor_extrato:,.2f} | Data: {data_extrato} | "
+        f"Favorecido: {favorecido_extrato[:50]}"
+    )
+    _bb_log(f"    [DEBUG] Comprovantes disponíveis: {len(comprovantes_disponiveis)}")
     
     # Caso especial: SISCOMEX com código de documento
     # Se for SISCOMEX e tiver código de documento, busca APENAS por RPS
@@ -906,294 +948,184 @@ def encontrar_combinacoes_comprovantes(extrato_row, comprovantes_disponiveis, ma
         else:
             print(f"    [INFO] AFRMM mas sem coluna Categoria nos comprovantes - tenta busca normal")
     
-    # Verifica se há comprovantes disponíveis
     if len(comprovantes_disponiveis) == 0:
-        print(f"    [DEBUG] Nenhum comprovante disponível para busca")
         return None
-    
-    # Debug: mostra alguns comprovantes disponíveis
-    if len(comprovantes_disponiveis) > 0:
-        print(f"    [DEBUG] Primeiros 3 comprovantes disponíveis:")
-        for idx, (_, comp_row) in enumerate(comprovantes_disponiveis.head(3).iterrows()):
-            valor_comp = abs(comp_row.get('valor', 0))
-            data_comp = comp_row.get('data', '')
-            favorecido_comp = str(comp_row.get('favorecido_original', ''))[:50]
-            categoria_comp = str(comp_row.get('categoria_original', ''))[:30] if 'categoria_original' in comp_row else 'N/A'
-            print(f"      [{idx+1}] R$ {valor_comp:,.2f} | Data: {data_comp} | Fornecedor: {favorecido_comp} | Categoria: {categoria_comp}")
-    
-    # Estratégia: Busca progressiva só por data (favorecido não precisa ser parecido)
-    # Prioriza mesma data, depois ±1, ±2, ±3 dias. Máximo 10 comprovantes por combinação.
-    estrategias_busca = [
-        (0, False, "mesma data"),
-        (1, False, "±1 dia"),
-        (2, False, "±2 dias"),
-        (3, False, "±3 dias"),
-    ]
-    
-    melhor_resultado = None
-    melhor_tamanho = float('inf')
-    
-    for tolerancia, filtrar_favorecido, descricao in estrategias_busca:
-        # Filtra por data conforme tolerância
-        comprovantes_candidatos = comprovantes_disponiveis[
-            comprovantes_disponiveis.apply(
-                lambda row: abs((row['data'] - data_extrato).days) <= tolerancia,
-                axis=1
+
+    valor_extrato_centavos = int(round(valor_extrato * 100))
+    soma_global_centavos = int(round(comprovantes_disponiveis["valor"].abs().sum() * 100))
+    if soma_global_centavos + TOLERANCIA_CENTAVOS < valor_extrato_centavos:
+        _bb_log(
+            f"    [INFO] Soma total dos comprovantes (R$ {soma_global_centavos / 100:,.2f}) "
+            f"menor que o extrato — sem match possível."
+        )
+        return None
+
+    # Match 1:1 rápido (mesma data, depois janela ±3 dias)
+    for tolerancia in (0, 1, 2, 3):
+        candidatos = _filtrar_comprovantes_por_data(comprovantes_disponiveis, data_extrato, tolerancia)
+        if len(candidatos) == 0:
+            continue
+        match_1_1 = _tentar_match_1_para_1(valor_extrato_centavos, candidatos)
+        if match_1_1:
+            print(
+                f"    [OK] Match 1:1 em {'mesma data' if tolerancia == 0 else f'±{tolerancia} dia(s)'}"
             )
-        ].copy()
-        
+            return match_1_1
+
+    estrategias_busca = [
+        (0, "mesma data"),
+        (1, "±1 dia"),
+        (2, "±2 dias"),
+        (3, "±3 dias"),
+    ]
+
+    melhor_resultado = None
+    melhor_tamanho = float("inf")
+    combinacoes_testadas_total = 0
+
+    for tolerancia, descricao in estrategias_busca:
+        comprovantes_candidatos = _filtrar_comprovantes_por_data(
+            comprovantes_disponiveis, data_extrato, tolerancia
+        )
         if len(comprovantes_candidatos) == 0:
             continue
-        
-        # Favorecido não precisa ser parecido: não filtra por similaridade de texto.
-        
-        # Calcula métricas de relevância (data e valor apenas)
+
         comprovantes_candidatos = comprovantes_candidatos.copy()
-        comprovantes_candidatos['dias_diff'] = (comprovantes_candidatos['data'] - data_extrato).abs().dt.days
-        comprovantes_candidatos['valor_abs'] = comprovantes_candidatos['valor'].abs()
-        
-        # Relevância só por data e valor (favorecido não precisa ser parecido)
+        comprovantes_candidatos["dias_diff"] = (
+            comprovantes_candidatos["data"] - data_extrato
+        ).abs().dt.days
+        comprovantes_candidatos["valor_abs"] = comprovantes_candidatos["valor"].abs()
         peso_data = 1.0 if tolerancia == 0 else 1.0 / (1 + tolerancia * 2)
-        comprovantes_candidatos['relevancia'] = (
-            peso_data * 0.5 +  # Proximidade de data (50%)
-            (1.0 / (1 + abs(comprovantes_candidatos['valor_abs'] - valor_extrato) / max(valor_extrato, 1))) * 0.5  # Proximidade de valor (50%)
+        comprovantes_candidatos["relevancia"] = (
+            peso_data * 0.5
+            + (
+                1.0
+                / (
+                    1
+                    + abs(comprovantes_candidatos["valor_abs"] - valor_extrato)
+                    / max(valor_extrato, 1)
+                )
+            )
+            * 0.5
         )
-        
-        # Ordena por relevância (mais relevantes primeiro)
         comprovantes_candidatos = comprovantes_candidatos.sort_values(
-            by='relevancia',
-            ascending=False
-        ).copy()
-        
-        # Limita candidatos mas aumenta o pool para valores maiores
-        # Para valores muito grandes, precisa de mais candidatos
+            by="relevancia", ascending=False
+        )
+        limite_candidatos = MAX_CANDIDATOS_BB
         if valor_extrato > 100000:
-            limite_candidatos = 250  # Valores muito grandes precisam de muitas opções
+            limite_candidatos = min(50, MAX_CANDIDATOS_BB + 15)
         elif valor_extrato > 50000:
-            limite_candidatos = 220
-        elif valor_extrato > 10000:
-            limite_candidatos = 200
-        else:
-            limite_candidatos = 180
-        
-        comprovantes_candidatos = comprovantes_candidatos.head(limite_candidatos)
-        
-        # Remove colunas auxiliares
-        colunas_aux = ['dias_diff', 'valor_abs', 'relevancia']
-        for col in colunas_aux:
-            if col in comprovantes_candidatos.columns:
-                comprovantes_candidatos = comprovantes_candidatos.drop(columns=[col])
-        
-        # Prepara dados
+            limite_candidatos = min(45, MAX_CANDIDATOS_BB + 10)
+
+        comprovantes_candidatos = _limitar_candidatos_bb(
+            comprovantes_candidatos.head(limite_candidatos),
+            valor_extrato,
+            limite_candidatos,
+        )
+        comprovantes_candidatos = comprovantes_candidatos.drop(
+            columns=["dias_diff", "valor_abs", "relevancia"], errors="ignore"
+        )
+
         indices = comprovantes_candidatos.index.tolist()
-        valores = [abs(float(v)) for v in comprovantes_candidatos['valor'].tolist()]
-        
-        # Converte para centavos
-        valor_extrato_centavos = int(round(valor_extrato * 100))
+        valores = [abs(float(v)) for v in comprovantes_candidatos["valor"].tolist()]
         valores_centavos = [int(round(v * 100)) for v in valores]
-        
-        # Verifica soma total
+
         soma_total_disponivel = sum(valores_centavos)
-        if soma_total_disponivel < valor_extrato_centavos:
-            print(f"    [DEBUG] Estratégia '{descricao}': Soma disponível (R$ {soma_total_disponivel/100:,.2f}) < Valor extrato (R$ {valor_extrato_centavos/100:,.2f})")
+        if soma_total_disponivel + TOLERANCIA_CENTAVOS < valor_extrato_centavos:
+            _bb_log(
+                f"    [DEBUG] Estratégia '{descricao}': soma insuficiente "
+                f"(R$ {soma_total_disponivel / 100:,.2f} < R$ {valor_extrato:,.2f})"
+            )
             continue
-        
-        print(f"    [DEBUG] Estratégia '{descricao}': {len(comprovantes_candidatos)} candidatos, soma total: R$ {soma_total_disponivel/100:,.2f}, valor alvo: R$ {valor_extrato_centavos/100:,.2f}")
-        
-        # Estratégia 2: Tenta algoritmo dinâmico primeiro (mais rápido)
-        resultado = subset_sum_dinamico(valores_centavos, valor_extrato_centavos, max_combinacoes, TOLERANCIA_CENTAVOS)
-        
+
+        _bb_log(
+            f"    [DEBUG] Estratégia '{descricao}': {len(comprovantes_candidatos)} candidatos"
+        )
+
+        resultado = subset_sum_dinamico(
+            valores_centavos, valor_extrato_centavos, max_combinacoes, TOLERANCIA_CENTAVOS
+        )
         if resultado:
             indices_encontrados = [indices[i] for i in resultado]
-            # Se encontrou uma solução melhor (menor número de itens), guarda
             if len(indices_encontrados) < melhor_tamanho:
                 melhor_resultado = indices_encontrados
                 melhor_tamanho = len(indices_encontrados)
-                # Se encontrou solução na mesma data, retorna imediatamente (prioridade máxima)
-                if tolerancia == 0:
-                    soma_encontrada = sum(valores[i] for i in resultado)
-                    print(f"    [OK] Encontrada combinação ótima na mesma data: {len(indices_encontrados)} comprovante(s) somando R$ {soma_encontrada:,.2f}")
+                if tolerancia == 0 or len(indices_encontrados) == 1:
+                    print(
+                        f"    [OK] Combinação ({len(indices_encontrados)} comprovante(s)) em {descricao}"
+                    )
                     return melhor_resultado
-                # Se encontrou solução perfeita com 1 item, também retorna
-                elif len(indices_encontrados) == 1:
-                    soma_encontrada = sum(valores[i] for i in resultado)
-                    print(f"    [OK] Encontrada combinação perfeita (1 item): {len(indices_encontrados)} comprovante(s) em {descricao} somando R$ {soma_encontrada:,.2f}")
-                    return melhor_resultado
-        
-        # Estratégia 3: Para valores grandes, tenta heurística gulosa primeiro
-        # Ordena por valor (maior primeiro) e tenta encontrar combinação grande primeiro
-        if valor_extrato > 20000:
+
+        if valor_extrato > 20000 and not melhor_resultado:
             indices_valores = sorted(enumerate(valores_centavos), key=lambda x: x[1], reverse=True)
-            # Tenta heurística: pega os maiores valores que cabem
             soma_atual = 0
             indices_heuristica = []
             for idx, valor in indices_valores:
-                if soma_atual + valor <= valor_extrato_centavos:  # Sem tolerância
+                if soma_atual + valor <= valor_extrato_centavos:
                     soma_atual += valor
                     indices_heuristica.append(indices[idx])
-                    if soma_atual == valor_extrato_centavos:  # Valor deve ser EXATO
-                        if not melhor_resultado or len(indices_heuristica) < melhor_tamanho:
-                            melhor_resultado = indices_heuristica
-                            melhor_tamanho = len(indices_heuristica)
-                            print(f"    [OK] Heurística gulosa encontrou: {len(indices_heuristica)} comprovante(s) em {descricao}")
-                            break
-        
-        # Estratégia 4: Busca exaustiva limitada
-        # SEMPRE tenta busca exaustiva se não encontrou ainda
-        # LIMITA a 10 comprovantes máximo para evitar misturar muitos documentos sem relação
-        # Mas garante que sempre tenta quando há candidatos suficientes
-        if not melhor_resultado and len(comprovantes_candidatos) > 0:
-            # Cria lista de (posicao, valor) e ordena por valor
+                    if soma_atual == valor_extrato_centavos:
+                        melhor_resultado = indices_heuristica
+                        melhor_tamanho = len(indices_heuristica)
+                        print(
+                            f"    [OK] Heurística gulosa: {len(indices_heuristica)} comprovante(s) em {descricao}"
+                        )
+                        return melhor_resultado
+
+        # Busca exaustiva só com poucos candidatos; abandona cedo se estourar o limite global
+        if (
+            not melhor_resultado
+            and len(comprovantes_candidatos) > 0
+            and len(comprovantes_candidatos) <= 22
+            and combinacoes_testadas_total < MAX_COMBINACOES_EXAUSTIVA_BB
+        ):
             indices_valores = list(zip(range(len(indices)), valores_centavos))
             indices_valores.sort(key=lambda x: x[1], reverse=True)
-            # posicoes_ordenadas: posições na lista indices ordenadas por valor
-            posicoes_ordenadas = [i for i, v in indices_valores]
-            valores_ordenados = [v for i, v in indices_valores]
-            
-            # Testa combinações de tamanho crescente, mas com limites RESTRITIVOS
-            # MÁXIMO de 10 comprovantes por combinação para evitar misturar documentos sem relação
-            for tamanho in range(1, min(11, len(posicoes_ordenadas) + 1)):  # Até 10 itens (reduzido de 25)
-                # Ajusta limites dinamicamente baseado no valor
-                # LIMITES REDUZIDOS para evitar combinações muito grandes sem relação
-                if valor_extrato > 100000:
-                    # Valores muito grandes: limites mais restritivos
-                    if tamanho <= 3:
-                        max_combinacoes_teste = 2000
-                        max_candidatos = min(30, len(posicoes_ordenadas))
-                    elif tamanho <= 6:
-                        max_combinacoes_teste = 1000
-                        max_candidatos = min(25, len(posicoes_ordenadas))
-                    else:  # tamanho <= 10
-                        max_combinacoes_teste = 300
-                        max_candidatos = min(20, len(posicoes_ordenadas))
-                elif valor_extrato > 50000:
-                    if tamanho <= 3:
-                        max_combinacoes_teste = 1500
-                        max_candidatos = min(25, len(posicoes_ordenadas))
-                    elif tamanho <= 6:
-                        max_combinacoes_teste = 800
-                        max_candidatos = min(20, len(posicoes_ordenadas))
-                    else:  # tamanho <= 10
-                        max_combinacoes_teste = 200
-                        max_candidatos = min(18, len(posicoes_ordenadas))
-                else:
-                    # Para valores menores, aumenta limites para garantir que encontra
-                    # Especialmente importante para casos como AFRMM com poucos candidatos
-                    if tamanho <= 4:
-                        max_combinacoes_teste = 2000  # Aumentado para garantir busca completa
-                        max_candidatos = min(30, len(posicoes_ordenadas))  # Aumentado
-                    elif tamanho <= 7:
-                        max_combinacoes_teste = 1000  # Aumentado
-                        max_candidatos = min(25, len(posicoes_ordenadas))  # Aumentado
-                    else:  # tamanho <= 10
-                        max_combinacoes_teste = 500  # Aumentado
-                        max_candidatos = min(20, len(posicoes_ordenadas))  # Aumentado
-                
-                combinacoes_testadas = 0
+            posicoes_ordenadas = [i for i, _ in indices_valores]
+            valores_ordenados = [v for _, v in indices_valores]
+            max_candidatos = min(18, len(posicoes_ordenadas))
+
+            for tamanho in range(1, min(11, max_candidatos + 1)):
+                if combinacoes_testadas_total >= MAX_COMBINACOES_EXAUSTIVA_BB:
+                    break
+                max_por_tamanho = min(400, MAX_COMBINACOES_EXAUSTIVA_BB - combinacoes_testadas_total)
+                testadas_neste_tamanho = 0
                 for combo in combinations(range(max_candidatos), tamanho):
-                    combinacoes_testadas += 1
-                    if combinacoes_testadas > max_combinacoes_teste:
+                    testadas_neste_tamanho += 1
+                    combinacoes_testadas_total += 1
+                    if testadas_neste_tamanho > max_por_tamanho:
                         break
-                    
+                    if combinacoes_testadas_total > MAX_COMBINACOES_EXAUSTIVA_BB:
+                        break
+
                     soma_centavos = sum(valores_ordenados[i] for i in combo)
-                    diff_centavos = abs(soma_centavos - valor_extrato_centavos)
-                    if diff_centavos <= TOLERANCIA_CENTAVOS:  # Exato ou dentro da tolerância
-                        # Mapeia posições de volta para os índices originais do DataFrame
-                        # combo contém posições em posicoes_ordenadas (0, 1, 2, ...)
-                        # posicoes_ordenadas[i] contém a posição na lista indices
-                        # indices[pos] contém o índice original do DataFrame
-                        indices_encontrados = [indices[posicoes_ordenadas[i]] for i in combo]
-                        
-                        # Se a combinação tem muitos comprovantes (>5), exige que pelo menos 40% sejam da mesma data
-                        # (favorecido não precisa ser parecido)
-                        if len(indices_encontrados) > 5:
-                            try:
-                                comprovantes_encontrados = comprovantes_candidatos.loc[indices_encontrados]
-                            except KeyError:
-                                comprovantes_encontrados = comprovantes_disponiveis.loc[indices_encontrados]
-                            mesma_data = sum(1 for _, row in comprovantes_encontrados.iterrows() 
-                                           if abs((row['data'] - data_extrato).days) == 0)
-                            percentual_mesma_data = mesma_data / len(indices_encontrados)
-                            if percentual_mesma_data < 0.4:
-                                print(f"    [AVISO] Combinação rejeitada: {len(indices_encontrados)} comprovantes, apenas {percentual_mesma_data*100:.0f}% na mesma data")
-                                continue
-                        
-                        if not melhor_resultado or len(indices_encontrados) < melhor_tamanho:
-                            melhor_resultado = indices_encontrados
-                            melhor_tamanho = len(indices_encontrados)
-                            soma_encontrada = soma_centavos / 100
-                            
-                            # Mostra detalhes da combinação encontrada
-                            print(f"    [MATCH] Busca exaustiva encontrou {len(indices_encontrados)} comprovante(s):")
-                            for idx_found in indices_encontrados:
-                                # Usa comprovantes_candidatos porque indices_encontrados vem dele
-                                if idx_found in comprovantes_candidatos.index:
-                                    found_row = comprovantes_candidatos.loc[idx_found]
-                                elif idx_found in comprovantes_disponiveis.index:
-                                    found_row = comprovantes_disponiveis.loc[idx_found]
-                                else:
-                                    print(f"      [ERRO] Índice {idx_found} não encontrado em nenhum DataFrame")
-                                    continue
-                                
-                                data_found = found_row.get('data_original', found_row.get('data', ''))
-                                favorecido_found = str(found_row.get('favorecido_original', ''))[:50]
-                                valor_found = abs(found_row['valor'])
-                                print(f"      ✓ ID {found_row.get('ID_comprovante', idx_found)}: R$ {valor_found:,.2f} | {data_found} | {favorecido_found}")
-                            print(f"    [SOMA] Total: R$ {soma_encontrada:,.2f} (desejado: R$ {valor_extrato:,.2f})")
-                            
-                            # Se encontrou solução pequena, retorna
-                            if len(indices_encontrados) <= 3:
-                                return melhor_resultado
-    
-    # Retorna o melhor resultado encontrado, se houver
+                    if abs(soma_centavos - valor_extrato_centavos) > TOLERANCIA_CENTAVOS:
+                        continue
+
+                    indices_encontrados = [indices[posicoes_ordenadas[i]] for i in combo]
+                    if len(indices_encontrados) > 5:
+                        comprovantes_encontrados = comprovantes_candidatos.loc[indices_encontrados]
+                        mesma_data = sum(
+                            1
+                            for _, row in comprovantes_encontrados.iterrows()
+                            if abs((row["data"] - data_extrato).days) == 0
+                        )
+                        if mesma_data / len(indices_encontrados) < 0.4:
+                            continue
+
+                    if not melhor_resultado or len(indices_encontrados) < melhor_tamanho:
+                        melhor_resultado = indices_encontrados
+                        melhor_tamanho = len(indices_encontrados)
+                        print(
+                            f"    [OK] Busca exaustiva: {len(indices_encontrados)} comprovante(s) em {descricao}"
+                        )
+                        if len(indices_encontrados) <= 3:
+                            return melhor_resultado
+
     if melhor_resultado:
-        # Calcula soma final tentando usar comprovantes_disponiveis primeiro
-        soma_final = 0
-        for idx in melhor_resultado:
-            try:
-                if idx in comprovantes_disponiveis.index:
-                    soma_final += abs(comprovantes_disponiveis.loc[idx]['valor'])
-            except (KeyError, IndexError):
-                # Se não encontrar, tenta buscar usando outro método ou pula
-                pass
-        
-        print(f"    [RESULTADO FINAL] Melhor combinação encontrada: {len(melhor_resultado)} comprovante(s) somando R$ {soma_final:,.2f}")
-        print(f"    [DETALHE] Comprovantes relacionados:")
-        for idx_final in melhor_resultado:
-            try:
-                if idx_final in comprovantes_disponiveis.index:
-                    final_row = comprovantes_disponiveis.loc[idx_final]
-                else:
-                    print(f"    [AVISO] Índice {idx_final} não encontrado no DataFrame")
-                    continue
-            except (KeyError, IndexError):
-                print(f"    [AVISO] Erro ao acessar índice {idx_final}")
-                continue
-            data_final = final_row.get('data_original', final_row.get('data', ''))
-            favorecido_final = str(final_row.get('favorecido_original', ''))[:50]
-            valor_final = abs(final_row['valor'])
-            print(f"      → ID {final_row.get('ID_comprovante', idx_final)}: R$ {valor_final:,.2f} | {data_final} | {favorecido_final}")
+        print(f"    [OK] Combinação encontrada: {len(melhor_resultado)} comprovante(s)")
         return melhor_resultado
-    
-    print(f"    [INFO] Nenhuma combinação encontrada para R$ {valor_extrato:,.2f} do extrato '{favorecido_extrato[:50]}'")
-    
-    # Debug adicional: mostra estatísticas dos comprovantes disponíveis
-    if len(comprovantes_disponiveis) > 0:
-        valores_disponiveis = [abs(float(v)) for v in comprovantes_disponiveis['valor'].tolist()]
-        valores_disponiveis_centavos = [int(round(v * 100)) for v in valores_disponiveis]
-        soma_total = sum(valores_disponiveis_centavos)
-        valor_extrato_centavos = int(round(valor_extrato * 100))
-        
-        print(f"    [DEBUG] Estatísticas dos comprovantes disponíveis:")
-        print(f"      Total de comprovantes: {len(comprovantes_disponiveis)}")
-        print(f"      Soma total disponível: R$ {soma_total/100:,.2f}")
-        print(f"      Valor necessário: R$ {valor_extrato_centavos/100:,.2f}")
-        print(f"      Diferença: R$ {(soma_total - valor_extrato_centavos)/100:,.2f}")
-        if len(valores_disponiveis) > 0:
-            print(f"      Valor mínimo: R$ {min(valores_disponiveis):,.2f}")
-            print(f"      Valor máximo: R$ {max(valores_disponiveis):,.2f}")
-            print(f"      Valor médio: R$ {sum(valores_disponiveis)/len(valores_disponiveis):,.2f}")
-    
+
     return None
 
 
@@ -1235,11 +1167,11 @@ def subset_sum_dinamico(valores_centavos, valor_alvo_centavos, max_itens, tolera
     # Mas ainda mantém limite para evitar explosão de memória
     # Para poucos candidatos (como AFRMM com 2-7 candidatos), aumenta muito o limite
     if n <= 20:
-        max_estados = 500000  # Para poucos candidatos, permite muito mais estados
+        max_estados = min(80000, MAX_ESTADOS_SUBSET_SUM)
     elif n <= 50:
-        max_estados = 200000  # Para quantidade média
+        max_estados = min(50000, MAX_ESTADOS_SUBSET_SUM)
     else:
-        max_estados = 100000  # Para muitos candidatos, mantém limite
+        max_estados = min(30000, MAX_ESTADOS_SUBSET_SUM)
     
     for idx_global, valor in enumerate(valores_ordenados):
         # Se já passou do limite de itens, para
@@ -1337,24 +1269,11 @@ def conciliar_extrato_comprovantes(df_extrato, df_comprovantes):
     def calcular_complexidade(row):
         valor = abs(row['valor'])
         data_extrato = row['data']
-        
-        # Conta comprovantes disponíveis na mesma data (±2 dias)
-        comprovantes_proximos = df_comprovantes[
-            df_comprovantes.apply(
-                lambda r: abs((r['data'] - data_extrato).days) <= 2,
-                axis=1
-            )
-        ]
-        qtd_proximos = len(comprovantes_proximos)
-        
-        # Complexidade = valor / número de opções
-        # Quanto menor o valor e mais opções, mais simples
+        dias = (df_comprovantes['data'] - data_extrato).abs().dt.days
+        qtd_proximos = int((dias <= 2).sum())
         if qtd_proximos > 0:
-            complexidade = valor / qtd_proximos
-        else:
-            complexidade = valor  # Sem opções = complexo
-        
-        return complexidade
+            return valor / qtd_proximos
+        return valor
     
     df_extrato['complexidade'] = df_extrato.apply(calcular_complexidade, axis=1)
     
@@ -1367,11 +1286,16 @@ def conciliar_extrato_comprovantes(df_extrato, df_comprovantes):
     # Primeira passada: tenta conciliar todos
     print("\n[PASSADA 1] Processando todos os extratos (ordem: mais simples primeiro)...")
     extratos_nao_conciliados = []
+    processados = 0
     
     for idx, extrato_row in df_extrato_ordenado.iterrows():
+        processados += 1
         valor_extrato_abs = abs(extrato_row['valor'])
-        print(f"\nProcessando extrato {extrato_row['ID_extrato']}/{total_extratos} "
-              f"(R$ {valor_extrato_abs:,.2f}) [complexidade: {extrato_row['complexidade']:,.0f}]")
+        if processados == 1 or processados == total_extratos or processados % 25 == 0:
+            print(
+                f"\n[BB] Extrato {processados}/{total_extratos} "
+                f"(ID {extrato_row['ID_extrato']}, R$ {valor_extrato_abs:,.2f})"
+            )
         
         # Filtra comprovantes ainda não usados
         comprovantes_disponiveis = df_comprovantes[
@@ -1379,7 +1303,6 @@ def conciliar_extrato_comprovantes(df_extrato, df_comprovantes):
         ]
         
         if len(comprovantes_disponiveis) == 0:
-            print(f"  [INFO] Nenhum comprovante disponível")
             extratos_nao_conciliados.append(extrato_row)
             continue
         
@@ -1390,7 +1313,7 @@ def conciliar_extrato_comprovantes(df_extrato, df_comprovantes):
         )
         
         if combinacao:
-            print(f"  [DEBUG] Combinação recebida: {len(combinacao)} comprovante(s), índices: {combinacao[:5]}...")
+            _bb_log(f"  [DEBUG] Combinação recebida: {len(combinacao)} comprovante(s)")
             
             # Verifica se todos os índices existem no DataFrame original
             indices_validos = []
@@ -1506,128 +1429,12 @@ def conciliar_extrato_comprovantes(df_extrato, df_comprovantes):
                 extratos_nao_conciliados.append(extrato_row)
         else:
             extratos_nao_conciliados.append(extrato_row)
-            # Mostra informações para debug
-            comprovantes_mesma_data = comprovantes_disponiveis[
-                comprovantes_disponiveis.apply(
-                    lambda row: datas_proximas(extrato_row['data'], row['data']),
-                    axis=1
-                )
-            ]
-            if len(comprovantes_mesma_data) > 0:
-                soma_disponivel = abs(comprovantes_mesma_data['valor']).sum()
-                print(f"  [INFO] {len(comprovantes_mesma_data)} comprovante(s) na mesma data, soma: R$ {soma_disponivel:,.2f}")
     
-    # Segunda passada: reprocessa extratos não conciliados com estratégia diferente
-    if len(extratos_nao_conciliados) > 0:
-        print(f"\n[PASSADA 2] Reprocessando {len(extratos_nao_conciliados)} extratos não conciliados...")
-        print("           (Ordenando por valor: maiores primeiro para encontrar agrupamentos)")
-        
-        # Na segunda passada, ordena por valor (maior primeiro) para priorizar agrupamentos grandes
-        df_nao_conciliados = pd.DataFrame(extratos_nao_conciliados)
-        df_nao_conciliados = df_nao_conciliados.sort_values('valor', ascending=False).copy()
-        
-        for idx, extrato_row in df_nao_conciliados.iterrows():
-            valor_extrato_abs = abs(extrato_row['valor'])
-            print(f"\nReprocessando extrato {extrato_row['ID_extrato']} (R$ {valor_extrato_abs:,.2f})")
-            
-            # Filtra comprovantes ainda não usados
-            comprovantes_disponiveis = df_comprovantes[
-                ~df_comprovantes.index.isin(comprovantes_usados)
-            ]
-            
-            if len(comprovantes_disponiveis) == 0:
-                continue
-            
-            # Tenta novamente com mais agressividade (mais candidatos, mais tolerância)
-            combinacao = encontrar_combinacoes_comprovantes(
-                extrato_row,
-                comprovantes_disponiveis
-            )
-            
-            if combinacao:
-                # Verifica se todos os índices existem no DataFrame original
-                indices_validos = []
-                for c in combinacao:
-                    if c in df_comprovantes.index:
-                        indices_validos.append(c)
-                    else:
-                        print(f"  [AVISO] Índice {c} não encontrado no DataFrame original de comprovantes")
-                
-                if len(indices_validos) != len(combinacao):
-                    print(f"  [ERRO] Alguns índices não são válidos. Válidos: {len(indices_validos)}/{len(combinacao)}")
-                    continue
-                
-                try:
-                    valores_encontrados = []
-                    for c in combinacao:
-                        valor_comp = abs(df_comprovantes.loc[c]['valor'])
-                        valores_encontrados.append(valor_comp)
-                    
-                    soma_comprovantes = sum(valores_encontrados)
-                    diferenca = abs(soma_comprovantes - valor_extrato_abs)
-                    
-                    # Converte para centavos para comparação exata (evita problemas de ponto flutuante)
-                    soma_comprovantes_centavos = int(round(soma_comprovantes * 100))
-                    valor_extrato_centavos = int(round(valor_extrato_abs * 100))
-                    diferenca_centavos = abs(soma_comprovantes_centavos - valor_extrato_centavos)
-                except (KeyError, IndexError) as e:
-                    print(f"  [ERRO] Erro ao acessar comprovantes: {e}")
-                    print(f"  [DEBUG] Índices na combinação: {combinacao}")
-                    continue
-                
-                if diferenca_centavos <= TOLERANCIA_CENTAVOS:  # Exato ou dentro da tolerância
-                    comprovantes_usados.update(combinacao)
-                    
-                    for comprovante_idx in combinacao:
-                        try:
-                            comprovante_row = df_comprovantes.loc[comprovante_idx]
-                            
-                            # Busca Ref. Sigra do comprovante
-                            ref_sigra = '-'
-                            for col_name in ['Ref. Sigra', 'Ref Sigra', 'REF. SIGRA', 'ref_sigra']:
-                                if col_name in comprovante_row.index:
-                                    ref_val = comprovante_row.get(col_name)
-                                    if pd.notna(ref_val) and str(ref_val).strip() and str(ref_val).strip() != '':
-                                        ref_sigra = str(ref_val).strip()
-                                        break
-                            
-                            # Busca Categoria do comprovante
-                            categoria = '-'
-                            for col_name in ['Categoria', 'categoria', 'categoria_original']:
-                                if col_name in comprovante_row.index:
-                                    cat_val = comprovante_row.get(col_name)
-                                    if pd.notna(cat_val) and str(cat_val).strip() and str(cat_val).strip() != '':
-                                        categoria = str(cat_val).strip()
-                                        break
-                            
-                            # Busca Cliente do comprovante (coluna F no PGTO MASTER; NÃO usar "Ref Cliente" que é coluna E)
-                            cliente = '-'
-                            for col_name in comprovante_row.index:
-                                cn = str(col_name).lower()
-                                if 'cliente' in cn and 'ref' not in cn:
-                                    v = comprovante_row.get(col_name)
-                                    if pd.notna(v) and str(v).strip():
-                                        cliente = str(v).strip()
-                                        break
-                            
-                            conciliacoes.append({
-                                'ID_extrato': extrato_row['ID_extrato'],
-                                'Data_extrato': extrato_row['data_original'],
-                                'Valor_extrato': extrato_row['valor'],
-                                'Favorecido_extrato': extrato_row['favorecido_original'],
-                                'ID_comprovante': comprovante_row['ID_comprovante'],
-                                'Data_comprovante': comprovante_row['data_original'],
-                                'Valor_comprovante': comprovante_row['valor'],
-                                'Favorecido_comprovante': comprovante_row['favorecido_original'],
-                                'Ref. Sigra': ref_sigra,
-                                'Categoria': categoria,
-                                'Cliente': cliente
-                            })
-                        except (KeyError, IndexError) as e:
-                            print(f"  [ERRO] Erro ao processar comprovante {comprovante_idx}: {e}")
-                            continue
-                    
-                    print(f"  [OK] Conciliação encontrada na 2ª passada: {len(combinacao)} comprovante(s)")
+    if extratos_nao_conciliados:
+        print(
+            f"\n[BB] {len(extratos_nao_conciliados)} extrato(s) sem match "
+            f"(marcados como pendentes na planilha)."
+        )
     
     df_conciliacao = pd.DataFrame(conciliacoes)
     

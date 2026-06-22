@@ -218,6 +218,168 @@ def _valores_equivalentes_centavos(valor_extrato_int, valor_comp_int):
     return valor_comp_int == valor_extrato_int
 
 
+NUMERARIO_TOLERANCIA_DATA_RECEBIMENTO = 7
+
+
+def _cliente_do_numerario(numerario_row) -> str:
+    empresa = numerario_row.get('Empresa', numerario_row.get('favorecido_original', ''))
+    if pd.isna(empresa) or not str(empresa).strip():
+        return '-'
+    return str(empresa).strip()
+
+
+def _texto_extrato_busca(extrato_row) -> str:
+    lanc = str(extrato_row.get('lancamento_original', '') or '')
+    fav = str(extrato_row.get('favorecido_original', '') or '')
+    return f"{lanc} {fav}".upper()
+
+
+def extrair_id_numerario_extrato(extrato_row) -> Optional[str]:
+    """Ex.: 'Numerario 1803013' no histórico do extrato."""
+    texto = _texto_extrato_busca(extrato_row)
+    match = re.search(r'numer[áa]rio\s*[#:]?\s*(\d+)', texto, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def _empresa_compativel_com_extrato(empresa_numerario: str, texto_extrato: str) -> bool:
+    from conciliar_itau_sigra import normalizar_texto
+
+    emp = normalizar_texto(empresa_numerario or '')
+    if not emp or len(emp) < 4:
+        return False
+    texto = normalizar_texto(texto_extrato or '')
+    if not texto:
+        return False
+    if emp in texto or texto in emp:
+        return True
+    palavras_emp = [p for p in emp.split() if len(p) >= 4]
+    if not palavras_emp:
+        return False
+    return palavras_emp[0] in texto
+
+
+def _montar_conciliacao_numerario(extrato_row, numerario_row) -> dict:
+    ref_processo = extrair_processo_numerario(numerario_row)
+    if pd.isna(ref_processo) or not str(ref_processo).strip():
+        ref_processo = '-'
+    else:
+        match_proc = re.search(r'processo\s+([^\s]+)', str(ref_processo), re.IGNORECASE)
+        if match_proc:
+            ref_processo = match_proc.group(1)
+
+    id_sigra_cel = numerario_row.get(COL_REF_SIGRA, '')
+    if pd.notna(id_sigra_cel) and str(id_sigra_cel).strip():
+        ref_processo = str(id_sigra_cel).strip()
+
+    id_numerario = numerario_row.get('ID', '-')
+    if pd.isna(id_numerario):
+        id_numerario = numerario_row.get('ID_comprovante', '-')
+
+    return {
+        'ID_extrato': extrato_row['ID_extrato'],
+        'Data_extrato': extrato_row['data_original'],
+        'Valor_extrato': extrato_row['valor'],
+        'Favorecido_extrato': extrato_row['favorecido_original'],
+        'ID_comprovante': id_numerario,
+        'Data_comprovante': numerario_row['data_original'],
+        'Valor_comprovante': numerario_row['valor'],
+        'Favorecido_comprovante': numerario_row['favorecido_original'],
+        'Ref. Sigra': ref_processo,
+        'Categoria': '-',
+        'Cliente': _cliente_do_numerario(numerario_row),
+        'Origem': 'Numerário',
+    }
+
+
+def encontrar_match_por_id_numerario(extrato_row, numerario_disponivel):
+    """Casa extrato com linha do numerário pelo ID (ex.: 1803013) + valor igual."""
+    id_extrato = extrair_id_numerario_extrato(extrato_row)
+    if not id_extrato:
+        return None
+
+    valor_extrato_int = int(round(abs(float(extrato_row['valor'])) * 100, 0))
+    candidatos = []
+    for idx, row in numerario_disponivel.iterrows():
+        nid = row.get('ID', row.get('ID_comprovante', ''))
+        if pd.isna(nid):
+            continue
+        nid_str = str(nid).strip().split('.')[0]
+        if nid_str != id_extrato and nid_str.lstrip('0') != id_extrato.lstrip('0'):
+            continue
+        valor_num_int = int(round(abs(float(row['valor'])) * 100, 0))
+        if _valores_equivalentes_centavos(valor_extrato_int, valor_num_int):
+            candidatos.append(idx)
+
+    if len(candidatos) == 1:
+        print(f"    [OK] Numerário por ID {id_extrato}")
+        return candidatos
+    if len(candidatos) > 1:
+        print(f"    [INFO] Numerário ID {id_extrato} ambíguo ({len(candidatos)} linhas com mesmo valor)")
+    return None
+
+
+def encontrar_match_numerario_empresa_valor(
+    extrato_row,
+    numerario_disponivel,
+    tolerancia_dias=NUMERARIO_TOLERANCIA_DATA_RECEBIMENTO,
+):
+    """
+    Para PIX/recebimentos: casa empresa do numerário com razão social do extrato,
+    valor exato e data próxima (tolerância de alguns dias).
+    """
+    from conciliar_itau_sigra import _extrato_e_recebimento, _to_centavos
+
+    if not _extrato_e_recebimento(extrato_row):
+        return None
+
+    valor_extrato = abs(float(extrato_row['valor']))
+    data_extrato = extrato_row.get('data')
+    if valor_extrato == 0 or pd.isna(data_extrato):
+        return None
+
+    valor_extrato_int = _to_centavos(valor_extrato) or int(round(valor_extrato * 100, 0))
+    data_extrato_norm = pd.Timestamp(data_extrato).normalize()
+    texto_extrato = _texto_extrato_busca(extrato_row)
+
+    candidatos = []
+    for idx, row in numerario_disponivel.iterrows():
+        empresa = row.get('Empresa', row.get('favorecido_original', ''))
+        if not _empresa_compativel_com_extrato(str(empresa or ''), texto_extrato):
+            continue
+        valor_num_int = _to_centavos(row.get('valor'))
+        if valor_num_int is None:
+            valor_num_int = int(round(abs(float(row['valor'])) * 100, 0))
+        if not _valores_equivalentes_centavos(valor_extrato_int, valor_num_int):
+            continue
+        data_num = row.get('data')
+        if pd.isna(data_num):
+            continue
+        diff_dias = abs((pd.Timestamp(data_num).normalize() - data_extrato_norm).days)
+        if diff_dias <= tolerancia_dias:
+            candidatos.append((idx, diff_dias))
+
+    if not candidatos:
+        return None
+    if len(candidatos) == 1:
+        idx_match, diff = candidatos[0]
+        print(
+            f"    [OK] Numerário por empresa+valor (recebimento): "
+            f"ID {numerario_disponivel.loc[idx_match].get('ID', idx_match)} | diff {diff} dia(s)"
+        )
+        return [idx_match]
+
+    candidatos.sort(key=lambda x: x[1])
+    melhor_diff = candidatos[0][1]
+    empatados = [idx for idx, diff in candidatos if diff == melhor_diff]
+    if len(empatados) == 1:
+        print(f"    [OK] Numerário por empresa+valor (desempate por data mais próxima)")
+        return empatados
+    print(f"    [INFO] Numerário empresa+valor ambíguo: {len(empatados)} candidatos no mesmo dia/valor")
+    return None
+
+
 def _normalizar_chave_coluna(nome: str) -> str:
     s = unicodedata.normalize('NFKD', str(nome).strip().lower())
     return ''.join(c for c in s if not unicodedata.combining(c))
@@ -949,49 +1111,25 @@ def conciliar_extrato_numerario(df_extrato_pendentes, df_numerario, conciliacoes
             print("  [INFO] Nenhum registro de numerário disponível")
             continue
 
-        combinacao = encontrar_match_exato(extrato_row, numerario_disponivel)
+        combinacao = encontrar_match_por_id_numerario(extrato_row, numerario_disponivel)
+
+        if not combinacao:
+            combinacao = encontrar_match_exato(extrato_row, numerario_disponivel)
 
         if not combinacao:
             combinacao = encontrar_grupo_por_processo_numerario(
                 extrato_row, numerario_disponivel, tolerancia_dias=TOLERANCIA_DATA
             )
 
+        if not combinacao:
+            combinacao = encontrar_match_numerario_empresa_valor(extrato_row, numerario_disponivel)
+
         if combinacao:
             numerario_usado.update(combinacao)
 
             for numerario_idx in combinacao:
                 numerario_row = df_numerario.loc[numerario_idx]
-
-                ref_processo = extrair_processo_numerario(numerario_row)
-                if pd.isna(ref_processo) or not str(ref_processo).strip():
-                    ref_processo = '-'
-                else:
-                    match_proc = re.search(r'processo\s+([^\s]+)', str(ref_processo), re.IGNORECASE)
-                    if match_proc:
-                        ref_processo = match_proc.group(1)
-
-                id_sigra_cel = numerario_row.get(COL_REF_SIGRA, '')
-                if pd.notna(id_sigra_cel) and str(id_sigra_cel).strip():
-                    ref_processo = str(id_sigra_cel).strip()
-
-                id_numerario = numerario_row.get('ID', '-')
-                if pd.isna(id_numerario):
-                    id_numerario = numerario_row.get('ID_comprovante', '-')
-
-                novas_conciliacoes.append({
-                    'ID_extrato': extrato_row['ID_extrato'],
-                    'Data_extrato': extrato_row['data_original'],
-                    'Valor_extrato': extrato_row['valor'],
-                    'Favorecido_extrato': extrato_row['favorecido_original'],
-                    'ID_comprovante': id_numerario,
-                    'Data_comprovante': numerario_row['data_original'],
-                    'Valor_comprovante': numerario_row['valor'],
-                    'Favorecido_comprovante': numerario_row['favorecido_original'],
-                    'Ref. Sigra': ref_processo,
-                    'Categoria': '-',
-                    'Cliente': '-',
-                    'Origem': 'Numerário',
-                })
+                novas_conciliacoes.append(_montar_conciliacao_numerario(extrato_row, numerario_row))
 
             print(f"  [OK] Conciliação com numerário confirmada: {len(combinacao)} registro(s)")
 
@@ -1010,27 +1148,7 @@ def conciliar_extrato_numerario(df_extrato_pendentes, df_numerario, conciliacoes
                 numerario_usado.update(combinacao)
                 for numerario_idx in combinacao:
                     numerario_row = df_numerario.loc[numerario_idx]
-                    ref_processo = extrair_processo_numerario(numerario_row)
-                    id_sigra_cel = numerario_row.get(COL_REF_SIGRA, '')
-                    if pd.notna(id_sigra_cel) and str(id_sigra_cel).strip():
-                        ref_processo = str(id_sigra_cel).strip()
-                    id_numerario = numerario_row.get('ID', '-')
-                    if pd.isna(id_numerario):
-                        id_numerario = numerario_row.get('ID_comprovante', '-')
-                    novas_conciliacoes.append({
-                        'ID_extrato': extrato_row['ID_extrato'],
-                        'Data_extrato': extrato_row['data_original'],
-                        'Valor_extrato': extrato_row['valor'],
-                        'Favorecido_extrato': extrato_row['favorecido_original'],
-                        'ID_comprovante': id_numerario,
-                        'Data_comprovante': numerario_row['data_original'],
-                        'Valor_comprovante': numerario_row['valor'],
-                        'Favorecido_comprovante': numerario_row['favorecido_original'],
-                        'Ref. Sigra': ref_processo,
-                        'Categoria': '-',
-                        'Cliente': '-',
-                        'Origem': 'Numerário',
-                    })
+                    novas_conciliacoes.append(_montar_conciliacao_numerario(extrato_row, numerario_row))
                 print(f"  [OK] Conciliação numerário (2ª passada): extrato {extrato_row['ID_extrato']}")
 
     print(f"\n[OK] Conciliação com numerário concluída: {len(novas_conciliacoes)} novas conciliações")

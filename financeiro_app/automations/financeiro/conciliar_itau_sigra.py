@@ -699,6 +699,18 @@ def preparar_dados(df, tipo='extrato'):
         col_id_numerario = COLUNAS_NUMERARIO.get('id')
         if col_id_numerario and col_id_numerario in df_prep.columns:
             df_normalizado['ID'] = df_prep[col_id_numerario]
+        # Data de pagamento (quando preenchida) reflete melhor o crédito no extrato que a criação do e-mail
+        col_pagamento = None
+        for col in df_prep.columns:
+            if str(col).strip().lower() == 'pagamento':
+                col_pagamento = col
+                break
+        if col_pagamento:
+            data_pagamento = normalizar_data(df_prep[col_pagamento])
+            mask_pag = data_pagamento.notna()
+            if mask_pag.any():
+                df_normalizado.loc[mask_pag, 'data'] = data_pagamento[mask_pag]
+                df_normalizado.loc[mask_pag, 'data_original'] = df_prep.loc[mask_pag, col_pagamento]
     
     if tipo == 'comprovantes':
         # Garante que campos de referência/códigos permaneçam como texto
@@ -778,13 +790,21 @@ def _comprovante_fornecedor_receita_federal(row):
 def _extrato_e_recebimento(row):
     """
     True quando o lançamento do extrato representa RECEBIMENTO(S).
-    Esses itens são tratados em outra planilha de comprovantes e não devem
-    ser conciliados neste fluxo (SIGRA/Numerário).
+    PIX recebido e créditos entram aqui; a conciliação é feita na passada de numerário.
     """
     lanc = str(row.get('lancamento_original', '') or '').upper()
     fav = str(row.get('favorecido_original', '') or '').upper()
     texto = f"{lanc} {fav}"
-    return 'RECEBIMENTO' in texto or 'RECEBIMENTOS' in texto
+    marcadores = (
+        'RECEBIMENTO',
+        'RECEBIMENTOS',
+        'PIX RECEBIDO',
+        'PIX RECEB',
+        'RECEBIDO',
+        'CREDITO',
+        'CRÉDITO',
+    )
+    return any(m in texto for m in marcadores)
 
 
 def encontrar_grupo_receita_federal_por_processo(extrato_row, comprovantes_disponiveis):
@@ -1952,8 +1972,11 @@ def criar_aba_status_extrato(
                     )
                 status = 'ℹ️ Fora do período PGTO'
             elif _extrato_e_recebimento(extrato_row):
-                observacao = 'Recebimento: não conciliado neste fluxo SIGRA/Numerário.'
-                status = 'ℹ️ Recebimento'
+                observacao = (
+                    'Recebimento pendente: anexe o numerário na rodada e confira data/valor '
+                    '(ex.: PIX VETORE com numerário 1803013).'
+                )
+                status = '❌ Pendente'
             else:
                 observacao = 'Não encontrou comprovantes correspondentes'
                 status = '❌ Pendente'

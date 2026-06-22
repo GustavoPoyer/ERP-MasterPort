@@ -162,7 +162,7 @@ const SLOT_CONFIG: Record<string, DocumentSlot[]> = {
     {
       key: "numerario",
       title: "Numerário (opcional)",
-      hint: "Use quando houver recebimentos a conciliar.",
+      hint: "Obrigatório para PIX recebido: planilha de numerário com IDs 1803013, empresa e valor.",
       required: false,
       allowMultiple: true,
     },
@@ -222,6 +222,30 @@ const ANALYSIS_VIEW_LABELS: Record<"planilha" | "matches" | "log", string> = {
 
 function bankLabel(bank: BankKey): string {
   return bank === "bb" ? "Banco do Brasil" : "Itaú / SIGRA";
+}
+
+const SIGRA_APP_BASE = "https://app.sigraweb.com";
+
+function parseSigraProcessIds(ref: string | undefined | null): string[] {
+  const raw = (ref || "").trim();
+  if (!raw || raw === "-") return [];
+  return [
+    ...new Set(
+      raw
+        .split(/[,;/|]+/)
+        .map((part) => part.trim())
+        .filter((part) => /^\d+$/.test(part)),
+    ),
+  ];
+}
+
+function sigraProcessUrl(processId: string): string {
+  return `${SIGRA_APP_BASE}/#/importacao/${processId}`;
+}
+
+function formatConciliacaoDisplay(value: string | undefined | null): string {
+  const normalized = (value || "").trim();
+  return normalized && normalized !== "-" ? normalized : "—";
 }
 
 type PageHeading = { title: string; subtitle: string; tag: string };
@@ -743,7 +767,7 @@ export default function HomePage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [selectedMonthKey, setSelectedMonthKey] = useState<string>("todos");
   const [filterField, setFilterField] = useState<
-    "geral" | "data" | "id_extrato" | "descricao" | "ref_sigra" | "status"
+    "geral" | "data" | "id_extrato" | "descricao" | "ref_sigra" | "cliente" | "status"
   >("geral");
   const [filterValue, setFilterValue] = useState<string>("");
   const [statusSort, setStatusSort] = useState<{ field: "data" | "valor"; direction: "desc" | "asc" }>({
@@ -869,7 +893,7 @@ export default function HomePage() {
 
       const matchesByField =
         filterField === "geral"
-          ? `${row.extrato_id} ${row.data} ${row.favorecido_descricao} ${row.ref_sigra} ${row.status}`
+          ? `${row.extrato_id} ${row.data} ${row.favorecido_descricao} ${row.ref_sigra} ${row.cliente} ${row.status}`
               .toLowerCase()
               .includes(needle)
           : filterField === "data"
@@ -880,7 +904,9 @@ export default function HomePage() {
                 ? String(row.favorecido_descricao || "").toLowerCase().includes(needle)
                 : filterField === "ref_sigra"
                   ? String(row.ref_sigra || "").toLowerCase().includes(needle)
-                  : String(row.status || "").toLowerCase().includes(needle);
+                  : filterField === "cliente"
+                    ? String(row.cliente || "").toLowerCase().includes(needle)
+                    : String(row.status || "").toLowerCase().includes(needle);
 
       return matchesMonth && matchesByField;
     });
@@ -2870,110 +2896,86 @@ export default function HomePage() {
           </section>
         ) : (
           <main className="app-shell app-shell--financeiro">
-      <section className="hero">
-        <div>
-          <h1>Painel Financeiro / Conciliação</h1>
-          <p>
-            Plataforma operacional para conciliações financeiras com arquitetura extensível:
-            Banco do Brasil, Itaú/SIGRA e novas automações plugáveis.
-          </p>
+      <div className="finance-stats" aria-label="Resumo das execuções">
+        <div className="finance-stat">
+          <span className="finance-stat-label">Total</span>
+          <strong className="finance-stat-value">{totals.total}</strong>
         </div>
-        <div className="badge">Live Operations • Internal Use</div>
-      </section>
-
-      <section className="kpi-grid">
-        <article className="kpi">
-          <div className="label">Total de execuções</div>
-          <div className="value">{totals.total}</div>
-        </article>
-        <article className="kpi">
-          <div className="label">Concluídas</div>
-          <div className="value">{totals.completed}</div>
-        </article>
-        <article className="kpi">
-          <div className="label">Em andamento</div>
-          <div className="value">{totals.running}</div>
-        </article>
-        <article className="kpi">
-          <div className="label">Com erro</div>
-          <div className="value">{totals.failed}</div>
-        </article>
-      </section>
-
-      <section className="panel" style={{ marginBottom: 16 }}>
-        <h2>Montagem e Execução da Rodada</h2>
-        <p className="subtitle">
-          Organize os arquivos por tipo de documento, execute e acompanhe o resultado logo abaixo na mesma tela.
-        </p>
-
-        <div className="tab-row" style={{ marginBottom: 10 }}>
-          <button
-            type="button"
-            className={`tab-btn ${bankView === "bb" ? "active" : ""}`}
-            onClick={() => setBankView("bb")}
-          >
-            Banco do Brasil ({runCountsByBank.bb})
-          </button>
-          <button
-            type="button"
-            className={`tab-btn ${bankView === "itau_sigra" ? "active" : ""}`}
-            onClick={() => setBankView("itau_sigra")}
-          >
-            Itaú / SIGRA ({runCountsByBank.itau_sigra})
-          </button>
+        <div className="finance-stat finance-stat--ok">
+          <span className="finance-stat-label">Concluídas</span>
+          <strong className="finance-stat-value">{totals.completed}</strong>
         </div>
+        <div className="finance-stat finance-stat--run">
+          <span className="finance-stat-label">Em andamento</span>
+          <strong className="finance-stat-value">{totals.running}</strong>
+        </div>
+        <div className="finance-stat finance-stat--err">
+          <span className="finance-stat-label">Com erro</span>
+          <strong className="finance-stat-value">{totals.failed}</strong>
+        </div>
+      </div>
 
-        <div className="finance-account-row">
-          <span className="finance-account-row-label">Conta</span>
-          <div className="tab-row finance-account-tabs">
-            {accountsForBank.map((account) => (
+      <section className="panel finance-panel finance-panel--setup">
+        <div className="finance-toolbar">
+          <div className="finance-toolbar-group">
+            <span className="finance-toolbar-label">Banco</span>
+            <div className="tab-row finance-tab-row">
               <button
-                key={account.id}
                 type="button"
-                className={`tab-btn finance-account-tab ${selectedAccountId === account.id ? "active" : ""}`}
-                onClick={() => {
-                  setSelectedAccountId(account.id);
-                  setSelectedRunId(null);
-                  setDataset(null);
-                }}
+                className={`tab-btn ${bankView === "bb" ? "active" : ""}`}
+                onClick={() => setBankView("bb")}
               >
-                {account.name} ({runCountByAccountId[account.id] || 0})
+                BB ({runCountsByBank.bb})
               </button>
-            ))}
-            {accountsForBank.length === 0 && (
-              <span className="muted">
-                {inactiveAccountsForBank.length > 0
-                  ? `${inactiveAccountsForBank.length} conta(s) inativa(s) — reative em Configurações → Contas bancárias.`
-                  : "Nenhuma conta ativa. Peça ao admin para cadastrar em Configurações."}
-              </span>
-            )}
+              <button
+                type="button"
+                className={`tab-btn ${bankView === "itau_sigra" ? "active" : ""}`}
+                onClick={() => setBankView("itau_sigra")}
+              >
+                Itaú / SIGRA ({runCountsByBank.itau_sigra})
+              </button>
+            </div>
+          </div>
+          <div className="finance-toolbar-group finance-toolbar-group--account">
+            <span className="finance-toolbar-label">Conta</span>
+            <div className="tab-row finance-tab-row finance-account-tabs">
+              {accountsForBank.map((account) => (
+                <button
+                  key={account.id}
+                  type="button"
+                  className={`tab-btn finance-account-tab ${selectedAccountId === account.id ? "active" : ""}`}
+                  onClick={() => {
+                    setSelectedAccountId(account.id);
+                    setSelectedRunId(null);
+                    setDataset(null);
+                  }}
+                >
+                  {account.name} ({runCountByAccountId[account.id] || 0})
+                </button>
+              ))}
+              {accountsForBank.length === 0 && (
+                <span className="muted finance-toolbar-empty">
+                  {inactiveAccountsForBank.length > 0
+                    ? "Contas inativas — reative em Configurações."
+                    : "Nenhuma conta ativa."}
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
-        <p className="subtitle" style={{ marginBottom: 12 }}>
-          {selectedAccount
-            ? `Rodada para ${selectedAccount.name} — ${
-                automations.find((a) => a.key === bankView)?.description ||
-                (bankView === "bb"
-                  ? "conciliação Banco do Brasil."
-                  : "conciliação Itaú com SIGRA/Numerário.")
-              }`
-            : "Selecione a conta bancária da rodada."}
-        </p>
-
-        <div className="doc-grid">
+        <div className="doc-grid doc-grid--compact">
           {slotConfig.map((slot) => (
-            <article className="doc-card" key={slot.key}>
+            <article className="doc-card doc-card--compact" key={slot.key} title={slot.hint}>
               <div className="doc-head">
                 <h3>{slot.title}</h3>
                 <span className={`doc-badge ${slot.required ? "required" : "optional"}`}>
                   {slot.required ? "Obrigatório" : "Opcional"}
                 </span>
               </div>
-              <p className="doc-hint">{slot.hint}</p>
               <div className="doc-actions">
-                <label className="upload-btn">
-                  Adicionar {slot.allowMultiple ? "documentos" : "documento"}
+                <label className="upload-btn upload-btn--compact">
+                  Anexar
                   <input
                     type="file"
                     multiple={slot.allowMultiple}
@@ -2986,32 +2988,33 @@ export default function HomePage() {
                 </label>
                 <button
                   type="button"
-                  className="btn-secondary"
+                  className="btn-secondary btn-secondary--compact"
                   onClick={() => clearSlot(slot.key)}
                   disabled={(filesBySlot[slot.key]?.length ?? 0) === 0}
                 >
                   Limpar
                 </button>
               </div>
-              <div className="file-list">
-                {(filesBySlot[slot.key] ?? []).length === 0 && (
-                  <span className="muted">Nenhum arquivo neste bloco.</span>
+              <div className="file-list file-list--compact">
+                {(filesBySlot[slot.key] ?? []).length === 0 ? (
+                  <span className="muted">Nenhum arquivo</span>
+                ) : (
+                  (filesBySlot[slot.key] ?? []).map((f, idx) => (
+                    <div className="file-chip" key={`${slot.key}-${f.name}-${idx}`}>
+                      {f.name}
+                      <button type="button" onClick={() => removeFile(slot.key, idx)} aria-label="Remover">
+                        ×
+                      </button>
+                    </div>
+                  ))
                 )}
-                {(filesBySlot[slot.key] ?? []).map((f, idx) => (
-                  <div className="file-chip" key={`${slot.key}-${f.name}-${idx}`}>
-                    {f.name}
-                    <button type="button" onClick={() => removeFile(slot.key, idx)}>
-                      x
-                    </button>
-                  </div>
-                ))}
               </div>
             </article>
           ))}
         </div>
 
-        <div className="run-toolbar">
-          <div className="muted">{flattenedFiles.length} arquivo(s) pronto(s) para envio.</div>
+        <div className="run-toolbar finance-run-toolbar">
+          <span className="muted">{flattenedFiles.length} arquivo(s) prontos</span>
           <div className="control-row">
             <button
               type="button"
@@ -3021,7 +3024,7 @@ export default function HomePage() {
                 loading || !selectedAccountId || flattenedFiles.length === 0 || hasMissingRequiredDocs
               }
             >
-              {loading ? "Disparando..." : "Executar conciliação"}
+              {loading ? "Disparando…" : "Executar conciliação"}
             </button>
             <button
               type="button"
@@ -3032,27 +3035,23 @@ export default function HomePage() {
               }}
               disabled={loading}
             >
-              Nova montagem
+              Limpar montagem
             </button>
           </div>
         </div>
         {hasMissingRequiredDocs && (
-          <p className="muted">Preencha todos os blocos obrigatórios para liberar a execução.</p>
+          <p className="finance-inline-hint">Anexe os arquivos obrigatórios para executar.</p>
         )}
         {error && <p className="error">{error}</p>}
       </section>
 
-      <section className="layout-grid">
-        <div className="panel">
+      <section className="panel finance-panel finance-panel--runs">
+        <div className="finance-panel-head">
           <h2>Execuções</h2>
-          <p className="subtitle">
-            Execuções de {selectedAccount?.name || "—"} (
-            {bankView === "bb" ? "Banco do Brasil" : "Itaú / SIGRA"}).
-          </p>
-          <div className="control-row" style={{ marginBottom: 10 }}>
+          <div className="control-row finance-panel-actions">
             <button
               type="button"
-              className="btn-secondary"
+              className="btn-secondary btn-secondary--compact"
               disabled={loading || runsRefreshing}
               onClick={(e) => {
                 e.preventDefault();
@@ -3064,108 +3063,78 @@ export default function HomePage() {
             >
               {runsRefreshing ? "Atualizando…" : "Atualizar"}
             </button>
-            <button type="button" className="btn-secondary" onClick={clearAllRuns} disabled={loading}>
+            <button type="button" className="btn-secondary btn-secondary--compact" onClick={clearAllRuns} disabled={loading}>
               Limpar histórico
             </button>
           </div>
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Conta</th>
-                  <th>Status</th>
-                  <th>Usuário</th>
-                  <th>Atualizado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredRuns.map((run) => (
-                  <tr
-                    key={run.id}
-                    onClick={() => setSelectedRunId(run.id)}
-                    className={`clickable ${selectedRun?.id === run.id ? "active" : ""}`}
-                  >
-                    <td>{run.id}</td>
-                    <td>{run.account_name || "—"}</td>
-                    <td>
-                      <span className={statusClass(run.status)}>{run.status}</span>
-                    </td>
-                    <td>{run.triggered_by}</td>
-                    <td>{new Date(run.updated_at).toLocaleString("pt-BR")}</td>
-                  </tr>
-                ))}
-                {filteredRuns.length === 0 && (
-                  <tr>
-                    <td colSpan={5}>Sem execuções para esta conta.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          {filteredRuns.length === 0 && runs.length > 0 && (
-            <p className="info-note" style={{ marginTop: 10 }}>
-              Não há execuções para {bankView === "bb" ? "Banco do Brasil" : "Itaú / SIGRA"} no momento.
-              Selecione o outro banco para visualizar os dados existentes.
-            </p>
-          )}
         </div>
 
-        <div className="panel">
-          <h2>Execução Selecionada</h2>
-          {selectedRun ? (
-            <>
-              <p className="subtitle">
-                Execução #{selectedRun.id} • {selectedRun.account_name || selectedRun.automation_key} •{" "}
-                <span className={statusClass(selectedRun.status)}>{selectedRun.status}</span>
-              </p>
-              <div className="run-focus-grid">
-                <article className="kpi">
-                  <div className="label">Criada em</div>
-                  <div className="value-sm">{new Date(selectedRun.created_at).toLocaleString("pt-BR")}</div>
-                </article>
-                <article className="kpi">
-                  <div className="label">Última atualização</div>
-                  <div className="value-sm">{new Date(selectedRun.updated_at).toLocaleString("pt-BR")}</div>
-                </article>
-                <article className="kpi">
-                  <div className="label">Automação</div>
-                  <div className="value-sm">{selectedRun.automation_key}</div>
-                </article>
-                <article className="kpi">
-                  <div className="label">Usuário</div>
-                  <div className="value-sm">{selectedRun.triggered_by}</div>
-                </article>
-              </div>
-              {selectedRun.status === "completed" && selectedRun.output_path ? (
-                <div className="run-output-actions">
-                  <button
-                    type="button"
-                    className="platform-settings-approve-btn run-download-btn"
-                    disabled={downloadBusy}
-                    onClick={() => downloadRunExcel(selectedRun.id).catch(() => null)}
-                  >
-                    {downloadBusy ? "Baixando…" : "Baixar Excel da conciliação"}
-                  </button>
-                  <p className="output-path muted">
-                    <b>Arquivo:</b> {selectedRun.output_path.split(/[/\\]/).pop()}
-                  </p>
-                </div>
-              ) : selectedRun.output_path ? (
-                <p className="output-path muted">
-                  <b>Arquivo de saída:</b> será liberado ao concluir a execução.
-                </p>
-              ) : (
-                <p className="muted">Arquivo de saída ainda não disponível.</p>
+        {selectedRun && (
+          <div className="finance-selected-banner">
+            <div className="finance-selected-meta">
+              <strong>#{selectedRun.id}</strong>
+              <span>{selectedRun.account_name || selectedRun.automation_key}</span>
+              <span className={statusClass(selectedRun.status)}>{selectedRun.status}</span>
+              <span className="muted">
+                {new Date(selectedRun.updated_at).toLocaleString("pt-BR")} · {selectedRun.triggered_by}
+              </span>
+            </div>
+            {selectedRun.status === "completed" && selectedRun.output_path ? (
+              <button
+                type="button"
+                className="btn-primary btn-primary--compact"
+                disabled={downloadBusy}
+                onClick={() => downloadRunExcel(selectedRun.id).catch(() => null)}
+              >
+                {downloadBusy ? "Baixando…" : "Baixar Excel"}
+              </button>
+            ) : null}
+          </div>
+        )}
+
+        <div className="table-wrapper finance-runs-table">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Conta</th>
+                <th>Status</th>
+                <th>Usuário</th>
+                <th>Atualizado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRuns.map((run) => (
+                <tr
+                  key={run.id}
+                  onClick={() => setSelectedRunId(run.id)}
+                  className={`clickable ${selectedRun?.id === run.id ? "active" : ""}`}
+                >
+                  <td>{run.id}</td>
+                  <td>{run.account_name || "—"}</td>
+                  <td>
+                    <span className={statusClass(run.status)}>{run.status}</span>
+                  </td>
+                  <td>{run.triggered_by}</td>
+                  <td>{new Date(run.updated_at).toLocaleString("pt-BR")}</td>
+                </tr>
+              ))}
+              {filteredRuns.length === 0 && (
+                <tr>
+                  <td colSpan={5}>Sem execuções para esta conta.</td>
+                </tr>
               )}
-            </>
-          ) : (
-            <p className="muted">Nenhuma execução selecionada.</p>
-          )}
+            </tbody>
+          </table>
         </div>
+        {filteredRuns.length === 0 && runs.length > 0 && (
+          <p className="finance-inline-hint">
+            Nenhuma execução neste banco — troque a aba BB / Itaú.
+          </p>
+        )}
       </section>
 
-      <section className="panel" style={{ marginTop: 16 }}>
+      <section className="panel finance-panel finance-panel--analysis">
         <div className="tab-row">
           <button
             type="button"
@@ -3202,55 +3171,38 @@ export default function HomePage() {
 
         {analysisView === "planilha" && (
           <>
-            <h2>Dados da Conciliação (no App)</h2>
-            <p className="subtitle">
-              Exibindo dados de: {bankView === "bb" ? "Banco do Brasil" : "Itaú / SIGRA"}
-            </p>
             {datasetError && <p className="error">{datasetError}</p>}
             {!dataset && !datasetError && (
-              <p className="info-note">
+              <p className="finance-inline-hint">
                 {selectedRun?.status === "running" || selectedRun?.status === "queued"
-                  ? "Execução em andamento. A planilha será atualizada automaticamente após a finalização."
-                  : "Aguardando dados da execução selecionada."}
+                  ? "Conciliação em andamento…"
+                  : "Selecione uma execução para ver os dados."}
               </p>
             )}
             {dataset && (
               <>
-                <div className="kpi-grid" style={{ marginBottom: 12 }}>
-                  <article className="kpi">
-                    <div className="label">Extratos</div>
-                    <div className="value">{dataset.metric?.total_extrato ?? 0}</div>
-                  </article>
-                  <article className="kpi">
-                    <div className="label">Linhas conciliadas</div>
-                    <div className="value">{dataset.metric?.total_conciliacao_rows ?? 0}</div>
-                  </article>
-                  <article className="kpi">
-                    <div className="label">Extratos conciliados</div>
-                    <div className="value">{dataset.metric?.total_extratos_conciliados ?? 0}</div>
-                  </article>
-                  <article className="kpi">
-                    <div className="label">Pendentes</div>
-                    <div className="value">{dataset.metric?.total_pendentes_status ?? 0}</div>
-                  </article>
-                  <article className="kpi">
-                    <div className="label">Saldo (Extratos - Comprovantes)</div>
-                    <div className="value">
+                <div className="finance-dataset-stats">
+                  <span>
+                    <strong>{dataset.metric?.total_extrato ?? 0}</strong> extratos
+                  </span>
+                  <span>
+                    <strong>{dataset.metric?.total_extratos_conciliados ?? 0}</strong> conciliados
+                  </span>
+                  <span>
+                    <strong>{dataset.metric?.total_pendentes_status ?? 0}</strong> pendentes
+                  </span>
+                  <span>
+                    Saldo{" "}
+                    <strong>
                       {balanceSummary.saldo.toLocaleString("pt-BR", {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
-                    </div>
-                  </article>
+                    </strong>
+                  </span>
                 </div>
 
-                <h3 style={{ marginTop: 0 }}>Tabela única - Status consolidado</h3>
-                <p className="subtitle" style={{ marginBottom: 8 }}>
-                  {bankView === "bb"
-                    ? "Abas por mês do extrato BB (Janeiro, Maio…): cada aba lista todos os lançamentos daquela planilha, independente da data do pagamento."
-                    : "Exibição consolidada do extrato com status de conciliação, Ref. Sigra e descrição/histórico."}
-                </p>
-                <div className="tab-row month-tabs" style={{ marginBottom: 10 }}>
+                <div className="tab-row month-tabs finance-month-tabs">
                   {monthTabs.map((tab) => (
                     <button
                       key={tab.key}
@@ -3262,13 +3214,14 @@ export default function HomePage() {
                     </button>
                   ))}
                 </div>
-                <div className="filter-row" style={{ marginBottom: 10 }}>
+                <div className="filter-row finance-filter-row">
                   <select value={filterField} onChange={(e) => setFilterField(e.target.value as typeof filterField)}>
                     <option value="geral">Filtro geral</option>
                     <option value="data">Data</option>
                     <option value="id_extrato">ID Extrato</option>
                     <option value="descricao">Descrição / Histórico</option>
-                    <option value="ref_sigra">Ref. Sigra</option>
+                    <option value="cliente">Cliente</option>
+                    <option value="ref_sigra">Processo / Ref. Sigra</option>
                     <option value="status">Status</option>
                   </select>
                   <FilterSearchInput
@@ -3279,9 +3232,11 @@ export default function HomePage() {
                           ? "Digite o ID do extrato"
                           : filterField === "descricao"
                             ? "Digite parte da descrição/histórico"
-                            : filterField === "ref_sigra"
-                              ? "Digite a Ref. Sigra"
-                              : filterField === "status"
+                            : filterField === "cliente"
+                              ? "Digite o nome do cliente"
+                              : filterField === "ref_sigra"
+                                ? "Digite o processo ou Ref. Sigra"
+                                : filterField === "status"
                                 ? "Digite o status (conciliado/pendente)"
                                 : "Digite para filtrar em todas as colunas"
                     }
@@ -3289,9 +3244,8 @@ export default function HomePage() {
                     onChange={setFilterValue}
                   />
                 </div>
-                <p className="subtitle" style={{ marginBottom: 8 }}>
-                  Mostrando {sortedStatuses.length} linha(s) na visão atual. Edite os campos diretamente na tabela;
-                  as alterações são salvas automaticamente.
+                <p className="finance-inline-hint">
+                  {sortedStatuses.length} linha(s) · edite na tabela; salva automaticamente.
                 </p>
                 {statusEditError && <p className="error">{statusEditError}</p>}
                 <div className="table-wrapper table-wrapper--scroll planilha-table-scroll">
@@ -3315,7 +3269,8 @@ export default function HomePage() {
                         >
                           Valor {statusSort.field === "valor" ? (statusSort.direction === "desc" ? "▼" : "▲") : ""}
                         </th>
-                        <th>Ref. Sigra</th>
+                        <th>Cliente</th>
+                        <th>Processo / Ref. Sigra</th>
                         <th>Status</th>
                         <th>Observação</th>
                         <th>Qtd Comp.</th>
@@ -3326,6 +3281,7 @@ export default function HomePage() {
                         const direcao = inferDirecaoMovimento(s);
                         const rowBusy = Boolean(statusRowSaving[s.id]);
                         const canEdit = Boolean(s.id) && !isSelectedRunActive;
+                        const sigraProcessIds = parseSigraProcessIds(s.ref_sigra);
                         return (
                           <tr
                             key={
@@ -3395,7 +3351,10 @@ export default function HomePage() {
                                 />
                               </div>
                             </td>
-                            <td>
+                            <td className="conciliacao-cliente-cell" title={s.cliente || undefined}>
+                              {formatConciliacaoDisplay(s.cliente)}
+                            </td>
+                            <td className="conciliacao-processo-cell">
                               <input
                                 className="conciliacao-cell-input"
                                 defaultValue={s.ref_sigra === "-" ? "" : s.ref_sigra}
@@ -3408,6 +3367,22 @@ export default function HomePage() {
                                   patchStatusRow(s.id, { ref_sigra: nextRef });
                                 }}
                               />
+                              {sigraProcessIds.length > 0 && (
+                                <div className="conciliacao-sigra-links">
+                                  {sigraProcessIds.map((processId) => (
+                                    <a
+                                      key={processId}
+                                      className="conciliacao-sigra-link"
+                                      href={sigraProcessUrl(processId)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      title={`Abrir processo ${processId} no Sigra`}
+                                    >
+                                      Sigra #{processId}
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </td>
                             <td>
                               <ConciliacaoStatusPicker
@@ -3433,7 +3408,7 @@ export default function HomePage() {
                       })}
                       {sortedStatuses.length === 0 && (
                         <tr>
-                          <td colSpan={bankView === "bb" ? 9 : 8}>Sem linhas para os filtros selecionados.</td>
+                          <td colSpan={bankView === "bb" ? 10 : 9}>Sem linhas para os filtros selecionados.</td>
                         </tr>
                       )}
                     </tbody>
@@ -3446,27 +3421,23 @@ export default function HomePage() {
 
         {analysisView === "matches" && (
           <>
-            <h2>Linhas conciliadas</h2>
-            <p className="subtitle">
-              Pares extrato ↔ comprovante da aba <b>conciliacao</b> do Excel ({bankView === "bb" ? "BB" : "Itaú"}).
-            </p>
             {datasetError && <p className="error">{datasetError}</p>}
             {!dataset && !datasetError && (
-              <p className="info-note">
+              <p className="finance-inline-hint">
                 {selectedRun?.status === "running" || selectedRun?.status === "queued"
-                  ? "Aguarde a conclusão da execução para carregar as conciliações."
-                  : "Aguardando dados da execução selecionada."}
+                  ? "Conciliação em andamento…"
+                  : "Selecione uma execução para ver as linhas conciliadas."}
               </p>
             )}
             {dataset && (
               <>
-                <div className="filter-row" style={{ marginBottom: 10 }}>
+                <div className="filter-row finance-filter-row">
                   <select value={filterField} onChange={(e) => setFilterField(e.target.value as typeof filterField)}>
                     <option value="geral">Filtro geral</option>
                     <option value="data">Data</option>
                     <option value="id_extrato">ID Extrato</option>
                     <option value="descricao">Categoria / Cliente</option>
-                    <option value="ref_sigra">Ref. Sigra</option>
+                    <option value="ref_sigra">Processo / Ref. Sigra</option>
                   </select>
                   <FilterSearchInput
                     placeholder="Filtrar conciliações…"
@@ -3474,8 +3445,8 @@ export default function HomePage() {
                     onChange={setFilterValue}
                   />
                 </div>
-                <p className="subtitle" style={{ marginBottom: 8 }}>
-                  Mostrando {sortedMatches.length} de {allMatches.length} linha(s) conciliada(s).
+                <p className="finance-inline-hint">
+                  {sortedMatches.length} de {allMatches.length} linha(s) conciliada(s)
                 </p>
                 <div className="table-wrapper table-wrapper--scroll planilha-table-scroll">
                   <table>
@@ -3500,14 +3471,16 @@ export default function HomePage() {
                         <th>ID Comprovante</th>
                         <th>Data comp.</th>
                         <th>Valor comp.</th>
-                        <th>Ref. Sigra</th>
+                        <th>Processo / Ref. Sigra</th>
                         <th>Categoria</th>
                         <th>Cliente</th>
                         <th>Origem</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedMatches.map((m, idx) => (
+                      {sortedMatches.map((m, idx) => {
+                        const sigraProcessIds = parseSigraProcessIds(m.ref_sigra);
+                        return (
                         <tr key={`${m.extrato_id}-${m.comprovante_id}-${idx}`}>
                           <td>{m.extrato_id}</td>
                           <td>{m.data_extrato}</td>
@@ -3515,12 +3488,31 @@ export default function HomePage() {
                           <td>{m.comprovante_id}</td>
                           <td>{m.data_comprovante}</td>
                           <td>{m.valor_comprovante.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
-                          <td>{m.ref_sigra || "-"}</td>
+                          <td className="conciliacao-processo-cell">
+                            <span>{formatConciliacaoDisplay(m.ref_sigra)}</span>
+                            {sigraProcessIds.length > 0 && (
+                              <div className="conciliacao-sigra-links">
+                                {sigraProcessIds.map((processId) => (
+                                  <a
+                                    key={processId}
+                                    className="conciliacao-sigra-link"
+                                    href={sigraProcessUrl(processId)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    title={`Abrir processo ${processId} no Sigra`}
+                                  >
+                                    Sigra #{processId}
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </td>
                           <td>{m.categoria || "-"}</td>
-                          <td>{m.cliente || "-"}</td>
+                          <td>{formatConciliacaoDisplay(m.cliente)}</td>
                           <td>{m.origem || "-"}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                       {sortedMatches.length === 0 && (
                         <tr>
                           <td colSpan={10}>
@@ -3540,11 +3532,10 @@ export default function HomePage() {
 
         {analysisView === "log" && (
           <>
-            <h2>Log Técnico</h2>
             {selectedRun ? (
               <>
-                <p className="subtitle">
-                  Execução #{selectedRun.id} • {selectedRun.automation_key} •{" "}
+                <p className="finance-inline-hint">
+                  Execução #{selectedRun.id} · {selectedRun.automation_key} ·{" "}
                   <span className={statusClass(selectedRun.status)}>{selectedRun.status}</span>
                 </p>
                 {selectedRun.output_path && (
