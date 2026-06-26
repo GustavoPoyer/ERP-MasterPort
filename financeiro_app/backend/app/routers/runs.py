@@ -13,6 +13,12 @@ from ..db import get_db
 from ..models import FinanceAccount, ReconciliationRun, RunMatchRow, RunMetric, RunStatusRow
 from ..schemas import RunCreate, RunDatasetRead, RunRead, RunStatusRowRead, RunStatusRowUpdate
 from ..services.account_service import account_name_map, get_active_account
+from ..services.run_dataset_service import (
+    DEFAULT_MATCH_LIMIT,
+    DEFAULT_STATUS_LIMIT,
+    MAX_DATASET_PAGE_LIMIT,
+    fetch_run_dataset_page,
+)
 from ..services.run_service import (
     cleanup_temp_dir,
     create_run,
@@ -244,27 +250,31 @@ def download_run_output(
 
 
 @router.get("/{run_id}/dataset", response_model=RunDatasetRead)
-def get_run_dataset(run_id: int, db: Session = Depends(get_db), _: object = Depends(require_sector("financeiro"))):
+def get_run_dataset(
+    run_id: int,
+    status_offset: int = Query(default=0, ge=0),
+    status_limit: int | None = Query(default=DEFAULT_STATUS_LIMIT, ge=0, le=MAX_DATASET_PAGE_LIMIT),
+    match_offset: int = Query(default=0, ge=0),
+    match_limit: int | None = Query(default=DEFAULT_MATCH_LIMIT, ge=0, le=MAX_DATASET_PAGE_LIMIT),
+    include_month_counts: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    _: object = Depends(require_sector("financeiro")),
+):
     run = db.get(ReconciliationRun, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Execução não encontrada.")
 
-    metric = db.scalar(select(RunMetric).where(RunMetric.run_id == run_id).limit(1))
-    matches = list(
-        db.scalars(
-            select(RunMatchRow)
-            .where(RunMatchRow.run_id == run_id)
-            .order_by(RunMatchRow.id.asc())
-        )
+    resolved_status_limit = None if status_limit == 0 else status_limit
+    resolved_match_limit = None if match_limit == 0 else match_limit
+    return fetch_run_dataset_page(
+        db,
+        run_id,
+        status_offset=status_offset,
+        status_limit=resolved_status_limit,
+        match_offset=match_offset,
+        match_limit=resolved_match_limit,
+        include_month_counts=include_month_counts,
     )
-    statuses = list(
-        db.scalars(
-            select(RunStatusRow)
-            .where(RunStatusRow.run_id == run_id)
-            .order_by(RunStatusRow.id.asc())
-        )
-    )
-    return RunDatasetRead(metric=metric, matches=matches, statuses=statuses)
 
 
 @router.patch("/{run_id}/status-rows/{row_id}", response_model=RunStatusRowRead)

@@ -6,6 +6,27 @@ from collections.abc import Callable
 
 from .base import AutomationResult
 
+_OUTPUT_ENV_KEYS = (
+    "OPERACOES_OUTPUT_PATH",
+    "BB_OUTPUT_PATH",
+    "ITAU_OUTPUT_PATH",
+)
+
+
+def _resolve_output_path(logs: str, env_extra: dict[str, str] | None) -> str:
+    output_path = ""
+    match = re.search(r"Arquivo Excel gerado:\s*(.+)", logs)
+    if match:
+        output_path = match.group(1).strip()
+    if output_path and os.path.isfile(output_path):
+        return os.path.abspath(output_path)
+
+    for key in _OUTPUT_ENV_KEYS:
+        candidate = (env_extra or {}).get(key, "").strip()
+        if candidate and os.path.isfile(candidate):
+            return os.path.abspath(candidate)
+    return output_path
+
 
 def _resolver_script_path(workspace: str, script_names: list[str]) -> tuple[str | None, str]:
     candidatos = []
@@ -71,10 +92,7 @@ def run_python_script(
     return_code = proc.wait()
 
     logs = "\n".join(log_lines)
-    output_path = ""
-    m = re.search(r"Arquivo Excel gerado:\s*(.+)", logs)
-    if m:
-        output_path = m.group(1).strip()
+    output_path = _resolve_output_path(logs, env_extra)
     return AutomationResult(
         success=return_code == 0,
         logs=logs.strip(),

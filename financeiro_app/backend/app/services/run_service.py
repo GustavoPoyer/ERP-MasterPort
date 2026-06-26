@@ -435,18 +435,54 @@ def _path_is_under(path: Path, root: Path) -> bool:
         return False
 
 
-def resolve_run_output_file(run: ReconciliationRun) -> Path:
+def _candidate_output_paths(run: ReconciliationRun) -> list[Path]:
+    candidates: list[Path] = []
     output = (run.output_path or "").strip()
-    if not output:
+    if output:
+        candidates.append(Path(output))
+
+    workspace = Path(settings.automation_workspace).resolve()
+    if run.id is not None:
+        safe_key = (run.automation_key or "").replace("/", "_")
+        if safe_key:
+            candidates.append(workspace / "output" / "runs" / f"run_{run.id}" / f"{safe_key}_resultado.xlsx")
+        if run.automation_key == "bb":
+            candidates.append(workspace / "output" / "runs" / f"run_{run.id}" / "conciliacao_bb.xlsx")
+        elif run.automation_key == "itau_sigra":
+            candidates.append(workspace / "output" / "runs" / f"run_{run.id}" / "conciliacao_itau_sigra.xlsx")
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(candidate)
+    return unique
+
+
+def resolve_run_output_file(run: ReconciliationRun) -> Path:
+    last_error: Exception | None = None
+    for candidate in _candidate_output_paths(run):
+        try:
+            file_path = candidate.resolve()
+        except OSError as exc:
+            last_error = exc
+            continue
+        if not file_path.is_file():
+            continue
+        if file_path.suffix.lower() not in {".xlsx", ".xls"}:
+            raise ValueError("Arquivo de saída inválido.")
+        if not any(_path_is_under(file_path, root) for root in _allowed_output_roots()):
+            raise ValueError("Caminho de saída não permitido.")
+        return file_path
+
+    if last_error:
+        raise FileNotFoundError(str(last_error)) from last_error
+    if not (run.output_path or "").strip():
         raise FileNotFoundError("output_path vazio")
-    file_path = Path(output).resolve()
-    if not file_path.is_file():
-        raise FileNotFoundError(str(file_path))
-    if file_path.suffix.lower() not in {".xlsx", ".xls"}:
-        raise ValueError("Arquivo de saída inválido.")
-    if not any(_path_is_under(file_path, root) for root in _allowed_output_roots()):
-        raise ValueError("Caminho de saída não permitido.")
-    return file_path
+    raise FileNotFoundError((run.output_path or "").strip())
 
 
 def _safe_filename(name: str) -> str:
@@ -475,10 +511,10 @@ def _slot_prefix_for_file(automation_key: str, slot_key: str) -> str:
     return "documento"
 
 
-def _stage_uploaded_files(run: ReconciliationRun, workspace: str, parameters: dict) -> tuple[list[str], str]:
+def _stage_uploaded_files(run: ReconciliationRun, workspace: str, parameters: dict) -> tuple[list[str], str, dict[str, list[str]]]:
     uploads = parameters.get("uploaded_files", [])
     if not uploads:
-        return [], ""
+        return [], "", {}
 
     temp_dir = (parameters.get("temp_dir") or "").strip()
     if temp_dir:
@@ -490,10 +526,11 @@ def _stage_uploaded_files(run: ReconciliationRun, workspace: str, parameters: di
         staging_dir.mkdir(parents=True, exist_ok=True)
 
     staged_paths: list[str] = []
+    files_by_slot: dict[str, list[str]] = {}
     for up in uploads:
         src = up.get("temp_path", "")
         original = up.get("original_name", "arquivo.xlsx")
-        slot_key = up.get("slot_key", "")
+        slot_key = (up.get("slot_key") or "arquivo").strip().lower() or "arquivo"
         if not src or not os.path.exists(src):
             continue
         safe_original = _safe_filename(original)
@@ -502,9 +539,11 @@ def _stage_uploaded_files(run: ReconciliationRun, workspace: str, parameters: di
         dst = staging_dir / final_name
         if Path(src).resolve() != dst.resolve():
             shutil.copy2(src, dst)
-        staged_paths.append(str(dst))
+        staged_path = str(dst)
+        staged_paths.append(staged_path)
+        files_by_slot.setdefault(slot_key, []).append(staged_path)
 
-    return staged_paths, str(staging_dir)
+    return staged_paths, str(staging_dir), files_by_slot
 
 
 def execute_run(run_id: int) -> None:
@@ -531,13 +570,18 @@ def execute_run(run_id: int) -> None:
 
         parameters = json.loads(run.parameters_json or "{}")
         temp_dir_to_cleanup = (parameters.get("temp_dir") or "").strip()
-        staged_files, staged_dir = _stage_uploaded_files(run, settings.automation_workspace, parameters)
+        staged_files, staged_dir, files_by_slot = _stage_uploaded_files(run, settings.automation_workspace, parameters)
         if staged_files:
             run.logs = (
                 f"Arquivos enviados: {len(staged_files)}\n"
                 f"Pasta da rodada: {staged_dir}\n"
                 + "\n".join(staged_files)
             )
+            if files_by_slot:
+                run.logs += "\n\nArquivos por slot:\n" + "\n".join(
+                    f"  {slot}: {', '.join(os.path.basename(p) for p in paths)}"
+                    for slot, paths in sorted(files_by_slot.items())
+                )
             db.commit()
 
         streaming_chunk: list[str] = []
@@ -571,6 +615,8 @@ def execute_run(run_id: int) -> None:
         runtime_parameters["run_id"] = run.id
         if staged_dir:
             runtime_parameters["input_folder"] = staged_dir
+        if files_by_slot:
+            runtime_parameters["files_by_slot"] = files_by_slot
 
         try:
             result = adapter.run(settings.automation_workspace, runtime_parameters)

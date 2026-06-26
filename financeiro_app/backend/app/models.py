@@ -105,6 +105,9 @@ class AppUser(Base):
     sector: Mapped[str] = mapped_column(String(80), default="financeiro")
     role: Mapped[str] = mapped_column(String(80), default="operator")
     contact_email: Mapped[str] = mapped_column(String(180), default="")
+    display_name: Mapped[str] = mapped_column(String(120), default="")
+    notify_email_pending: Mapped[int] = mapped_column(Integer, default=1)
+    notify_email_queue: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
     approval_status: Mapped[str] = mapped_column(String(30), default="approved", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -134,6 +137,19 @@ class AppPasswordReset(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    actor_user_id: Mapped[int | None] = mapped_column(Integer, index=True, nullable=True)
+    actor_username: Mapped[str] = mapped_column(String(120), default="")
+    action: Mapped[str] = mapped_column(String(80), index=True)
+    target_type: Mapped[str] = mapped_column(String(80), default="")
+    target_label: Mapped[str] = mapped_column(String(240), default="")
+    details: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class RhEmployee(Base):
@@ -248,6 +264,7 @@ class SectorAutomation(Base):
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[int] = mapped_column(Integer, default=1)
     created_by: Mapped[str] = mapped_column(String(120), default="")
+    input_schema_json: Mapped[str] = mapped_column(Text, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime,

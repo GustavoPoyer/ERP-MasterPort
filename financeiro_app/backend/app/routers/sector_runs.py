@@ -14,6 +14,7 @@ from ..schemas import RunRead
 from ..services.auth_service import require_current_user
 from ..services.automation_access import can_execute_automation
 from ..services.automation_catalog import list_visible_automations, resolve_sector_automation
+from ..services.automation_form_schema import load_input_schema, validate_run_against_schema
 from ..services.run_service import create_run, create_temp_run_dir, execute_run, resolve_run_output_file
 
 router = APIRouter(prefix="/sector-runs", tags=["sector-runs"])
@@ -157,6 +158,7 @@ async def trigger_sector_run_upload(
     sector: str = Form("operacoes"),
     triggered_by: str = Form("operacoes"),
     parameters_json: str = Form("{}"),
+    slot_keys: list[str] | None = Form(None),
     files: list[UploadFile] = File(default_factory=list),
     db: Session = Depends(get_db),
     user: AppUser = Depends(require_current_user),
@@ -178,35 +180,44 @@ async def trigger_sector_run_upload(
 
     _resolve_automation(db, key)
 
-    if not files:
-        raise HTTPException(status_code=400, detail="Envie pelo menos um arquivo antes de executar.")
+    try:
+        parameters = json.loads(parameters_json or "{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="parameters_json inválido.") from exc
+    if not isinstance(parameters, dict):
+        raise HTTPException(status_code=400, detail="parameters_json deve ser um objeto JSON.")
+
+    schema = load_input_schema(row.input_schema_json)
+    slot_keys = slot_keys or []
+    files_by_slot: dict[str, list[str]] = {}
+    temp_dir = create_temp_run_dir()
+    uploaded_entries = []
+    for idx, file in enumerate(files):
+        safe_name = os.path.basename(file.filename or "arquivo.dat")
+        target = os.path.join(temp_dir, safe_name)
+        content = await file.read()
+        with open(target, "wb") as f:
+            f.write(content)
+        slot_key = slot_keys[idx] if idx < len(slot_keys) else "arquivo"
+        uploaded_entries.append(
+            {
+                "original_name": safe_name,
+                "temp_path": target,
+                "slot_key": slot_key,
+            }
+        )
+        files_by_slot.setdefault(slot_key, []).append(safe_name)
+
+    try:
+        validate_run_against_schema(schema, parameters, files_by_slot)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     existing = _find_running_sector_run(db, key)
     if existing:
         raise HTTPException(
             status_code=409,
             detail=f"Já existe execução em andamento (run #{existing.id}, status={existing.status}).",
-        )
-
-    try:
-        parameters = json.loads(parameters_json or "{}")
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=400, detail="parameters_json inválido.") from exc
-
-    temp_dir = create_temp_run_dir()
-    uploaded_entries = []
-    for file in files:
-        safe_name = os.path.basename(file.filename or "arquivo.dat")
-        target = os.path.join(temp_dir, safe_name)
-        content = await file.read()
-        with open(target, "wb") as f:
-            f.write(content)
-        uploaded_entries.append(
-            {
-                "original_name": safe_name,
-                "temp_path": target,
-                "slot_key": "arquivo",
-            }
         )
 
     parameters = {

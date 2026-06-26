@@ -7,25 +7,31 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..config import settings
-from ..models import AppUser
+from ..models import AppUser, AuditLog
 from ..schemas import (
     AdminPasswordResetLinkResponse,
     AdminResetPasswordRequest,
     ApproveUserRequest,
+    ActiveUserRead,
+    AppInfoResponse,
+    AuditLogRead,
     ChangePasswordRequest,
     ForgotPasswordRequest,
     ForgotPasswordResponse,
     LoginRequest,
     LoginResponse,
     MessageResponse,
+    NotificationPreferencesUpdate,
     PendingCountResponse,
     PendingUserRead,
     RegisterPendingResponse,
     RegisterRequest,
     ResetPasswordRequest,
     SessionRead,
+    UpdateProfileRequest,
     UserProfile,
 )
+from ..services.audit_service import record_audit
 from ..services.auth_service import (
     bearer_scheme,
     build_password_reset_url,
@@ -38,10 +44,13 @@ from ..services.auth_service import (
     reset_password_with_token,
     revoke_all_sessions_for_user,
     revoke_session,
+    revoke_user_session_by_id,
     update_user_password,
     verify_password,
 )
 from ..services.email_service import send_admin_pending_registration_email
+from ..services.notification_recipients_service import collect_pending_registration_recipients
+from ..services.user_profile_service import is_valid_email, normalize_email, user_to_profile
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -51,6 +60,17 @@ FORGOT_PASSWORD_MESSAGE = (
     "Se o usuário existir e estiver ativo, um link de redefinição foi gerado. "
     "Contate o administrador se não receber instruções."
 )
+
+
+def _send_pending_registration_email(username: str, requested_sector: str) -> None:
+    from ..db import SessionLocal
+
+    db = SessionLocal()
+    try:
+        recipients = collect_pending_registration_recipients(db)
+        send_admin_pending_registration_email(username, requested_sector, recipients)
+    finally:
+        db.close()
 
 
 def _current_token(credentials: HTTPAuthorizationCredentials | None) -> str | None:
@@ -96,7 +116,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     db.refresh(user)
 
     threading.Thread(
-        target=send_admin_pending_registration_email,
+        target=_send_pending_registration_email,
         args=(user.username, user.sector),
         daemon=True,
     ).start()
@@ -130,7 +150,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     session = create_session(db, user)
     return LoginResponse(
         access_token=session.token,
-        user=UserProfile(id=user.id, username=user.username, sector=user.sector, role=user.role),
+        user=user_to_profile(user),
     )
 
 
@@ -158,11 +178,73 @@ def logout_all(
 
 @router.get("/me", response_model=UserProfile)
 def me(current_user: AppUser = Depends(require_current_user)):
-    return UserProfile(
-        id=current_user.id,
-        username=current_user.username,
-        sector=current_user.sector,
-        role=current_user.role,
+    return user_to_profile(current_user)
+
+
+@router.patch("/me", response_model=UserProfile)
+def update_me(
+    payload: UpdateProfileRequest,
+    current_user: AppUser = Depends(require_current_user),
+    db: Session = Depends(get_db),
+):
+    changed: list[str] = []
+    if payload.display_name is not None:
+        name = payload.display_name.strip()
+        if len(name) > 120:
+            raise HTTPException(status_code=400, detail="Nome de exibição muito longo.")
+        if name != (current_user.display_name or ""):
+            current_user.display_name = name
+            changed.append("display_name")
+    if payload.contact_email is not None:
+        email = normalize_email(payload.contact_email)
+        if not is_valid_email(email):
+            raise HTTPException(status_code=400, detail="Informe um e-mail válido ou deixe em branco.")
+        if email != (current_user.contact_email or ""):
+            current_user.contact_email = email
+            changed.append("contact_email")
+    if not changed:
+        return user_to_profile(current_user)
+    db.commit()
+    db.refresh(current_user)
+    record_audit(
+        db,
+        actor=current_user,
+        action="profile.update",
+        target_type="user",
+        target_label=current_user.username,
+        details=", ".join(changed),
+    )
+    return user_to_profile(current_user)
+
+
+@router.patch("/me/notifications", response_model=UserProfile)
+def update_notifications(
+    payload: NotificationPreferencesUpdate,
+    current_user: AppUser = Depends(require_current_user),
+    db: Session = Depends(get_db),
+):
+    if payload.notify_email_pending is not None:
+        current_user.notify_email_pending = 1 if payload.notify_email_pending else 0
+    if payload.notify_email_queue is not None:
+        current_user.notify_email_queue = 1 if payload.notify_email_queue else 0
+    db.commit()
+    db.refresh(current_user)
+    record_audit(
+        db,
+        actor=current_user,
+        action="notifications.update",
+        target_type="user",
+        target_label=current_user.username,
+    )
+    return user_to_profile(current_user)
+
+
+@router.get("/app-info", response_model=AppInfoResponse)
+def app_info():
+    return AppInfoResponse(
+        api_version=settings.app_version,
+        environment=settings.app_env,
+        smtp_configured=bool(settings.smtp_host),
     )
 
 
@@ -185,6 +267,35 @@ def sessions(
     ]
 
 
+@router.delete("/sessions/{session_id}", response_model=MessageResponse)
+def revoke_one_session(
+    session_id: int,
+    current_user: AppUser = Depends(require_current_user),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+):
+    token = _current_token(credentials)
+    revoked = revoke_user_session_by_id(
+        db,
+        current_user.id,
+        session_id,
+        except_token=token,
+    )
+    if not revoked:
+        raise HTTPException(
+            status_code=404,
+            detail="Sessão não encontrada ou não pode ser encerrada neste dispositivo.",
+        )
+    record_audit(
+        db,
+        actor=current_user,
+        action="session.revoke",
+        target_type="session",
+        target_label=f"#{session_id}",
+    )
+    return MessageResponse(message="Sessão encerrada.")
+
+
 @router.post("/change-password", response_model=MessageResponse)
 def change_password(
     payload: ChangePasswordRequest,
@@ -200,6 +311,13 @@ def change_password(
     update_user_password(db, current_user, payload.new_password)
     token = _current_token(credentials)
     revoke_all_sessions_for_user(db, current_user.id, except_token=token)
+    record_audit(
+        db,
+        actor=current_user,
+        action="password.change",
+        target_type="user",
+        target_label=current_user.username,
+    )
     return MessageResponse(message="Senha alterada com sucesso.")
 
 
@@ -268,7 +386,7 @@ def list_pending_users(
 def approve_user(
     user_id: int,
     payload: ApproveUserRequest,
-    _admin: AppUser = Depends(require_admin),
+    admin: AppUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     user = db.get(AppUser, user_id)
@@ -284,14 +402,21 @@ def approve_user(
     user.is_active = 1
     db.commit()
     db.refresh(user)
-
-    return UserProfile(id=user.id, username=user.username, sector=user.sector, role=user.role)
+    record_audit(
+        db,
+        actor=admin,
+        action="user.approve",
+        target_type="user",
+        target_label=user.username,
+        details=f"setor={user.sector}",
+    )
+    return user_to_profile(user)
 
 
 @router.post("/admin/users/{user_id}/reject", response_model=UserProfile)
 def reject_user(
     user_id: int,
-    _admin: AppUser = Depends(require_admin),
+    admin: AppUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     user = db.get(AppUser, user_id)
@@ -302,15 +427,21 @@ def reject_user(
     user.is_active = 0
     db.commit()
     db.refresh(user)
-
-    return UserProfile(id=user.id, username=user.username, sector=user.sector, role=user.role)
+    record_audit(
+        db,
+        actor=admin,
+        action="user.reject",
+        target_type="user",
+        target_label=user.username,
+    )
+    return user_to_profile(user)
 
 
 @router.post("/admin/users/{user_id}/reset-password", response_model=MessageResponse)
 def admin_reset_password(
     user_id: int,
     payload: AdminResetPasswordRequest,
-    _admin: AppUser = Depends(require_admin),
+    admin: AppUser = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     user = db.get(AppUser, user_id)
@@ -319,6 +450,13 @@ def admin_reset_password(
 
     update_user_password(db, user, payload.new_password)
     revoke_all_sessions_for_user(db, user.id)
+    record_audit(
+        db,
+        actor=admin,
+        action="password.admin_reset",
+        target_type="user",
+        target_label=user.username,
+    )
     return MessageResponse(message=f"Senha de {user.username} redefinida pelo administrador.")
 
 
@@ -334,7 +472,56 @@ def admin_lookup_user(
     user = db.scalar(select(AppUser).where(AppUser.username == name).limit(1))
     if not user or user.approval_status != "approved" or user.is_active != 1:
         raise HTTPException(status_code=404, detail="Usuário ativo não encontrado.")
-    return UserProfile(id=user.id, username=user.username, sector=user.sector, role=user.role)
+    return user_to_profile(user)
+
+
+@router.get("/admin/users", response_model=list[ActiveUserRead])
+def list_active_users(
+    search: str | None = None,
+    _admin: AppUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    stmt = (
+        select(AppUser)
+        .where(AppUser.approval_status == "approved", AppUser.is_active == 1)
+        .order_by(AppUser.username.asc())
+    )
+    rows = db.scalars(stmt).all()
+    q = (search or "").strip().lower()
+    if q:
+        rows = [
+            user
+            for user in rows
+            if q in user.username.lower()
+            or q in (user.display_name or "").lower()
+            or q in (user.contact_email or "").lower()
+            or q in user.sector.lower()
+        ]
+    return [
+        ActiveUserRead(
+            id=user.id,
+            username=user.username,
+            display_name=(user.display_name or "").strip(),
+            contact_email=(user.contact_email or "").strip(),
+            sector=user.sector,
+            role=user.role,
+            created_at=user.created_at,
+        )
+        for user in rows
+    ]
+
+
+@router.get("/admin/audit-log", response_model=list[AuditLogRead])
+def list_audit_log(
+    limit: int = 60,
+    _admin: AppUser = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    capped = max(1, min(limit, 200))
+    rows = db.scalars(
+        select(AuditLog).order_by(AuditLog.created_at.desc()).limit(capped)
+    ).all()
+    return [AuditLogRead.model_validate(row) for row in rows]
 
 
 @router.post("/admin/users/{user_id}/password-reset-link", response_model=AdminPasswordResetLinkResponse)

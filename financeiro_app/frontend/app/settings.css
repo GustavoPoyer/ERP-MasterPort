@@ -1,0 +1,723 @@
+/* —— Configurações · Vision Pro clean —— */
+
+.platform-dashboard--settings {
+  --kivo-pane-surface: transparent;
+  border-color: transparent;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  padding-top: 12px;
+}
+
+.platform-dashboard--settings > .platform-page-header {
+  display: none;
+}
+
+.platform-dashboard--settings > .platform-view-pane--configuracoes {
+  justify-content: flex-start;
+  align-items: stretch;
+}
+
+.spatial-settings {
+  --primary: var(--kivo-accent);
+  --primary-strong: var(--kivo-accent-strong);
+  --spatial-neon: var(--kivo-accent);
+  --spatial-neon-glow: rgba(217, 249, 157, 0.38);
+  --spatial-text: rgba(255, 255, 255, 0.94);
+  --spatial-text-soft: rgba(255, 255, 255, 0.62);
+  --spatial-text-muted: rgba(255, 255, 255, 0.46);
+  --spatial-glass: rgba(14, 16, 24, 0.36);
+  --spatial-glass-edge: rgba(255, 255, 255, 0.26);
+  --settings-ease: var(--kivo-ease);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  padding: 0 0 16px;
+}
+
+/* —— Hero —— */
+.spatial-settings-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 20px;
+  animation: settings-rise var(--kivo-duration-enter) var(--settings-ease) both;
+}
+
+.spatial-settings-hero-copy .spatial-eyebrow {
+  margin: 0 0 5px;
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+}
+
+.spatial-settings-hero-title {
+  font-size: clamp(1.15rem, 1.8vw, 1.38rem);
+  line-height: 1.15;
+}
+
+.spatial-settings-hero-lead {
+  max-width: 34ch;
+  margin-top: 6px;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.spatial-settings-hero-mascot {
+  position: relative;
+  flex-shrink: 0;
+  width: 60px;
+  height: 60px;
+}
+
+.spatial-settings-hero .spatial-hero-robot {
+  width: 42px;
+  height: 42px;
+}
+
+/* —— Alert banner —— */
+.spatial-settings-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(217, 249, 157, 0.28);
+  background: rgba(217, 249, 157, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: var(--spatial-text);
+  text-align: left;
+  font: inherit;
+  cursor: default;
+  animation: settings-rise var(--kivo-duration-enter) var(--settings-ease) 0.03s both;
+  transition:
+    transform 0.3s var(--settings-ease),
+    border-color 0.3s ease,
+    background 0.3s ease;
+}
+
+.spatial-settings-alert--action {
+  cursor: pointer;
+}
+
+.platform-shell .spatial-settings .spatial-settings-alert--action:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(217, 249, 157, 0.42);
+  background: rgba(217, 249, 157, 0.12);
+}
+
+.spatial-settings-alert strong {
+  display: block;
+  font-size: 0.86rem;
+}
+
+.spatial-settings-alert small {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: var(--spatial-text-soft);
+}
+
+/* —— Tab nav (segmented) —— */
+.spatial-settings-nav {
+  display: inline-flex;
+  align-self: flex-start;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow:
+    0 10px 32px rgba(10, 16, 32, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  animation: settings-rise var(--kivo-duration-enter) var(--settings-ease) 0.05s both;
+}
+
+.spatial-settings-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--spatial-text-soft);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color var(--kivo-duration-base) var(--settings-ease),
+    background var(--kivo-duration-base) var(--settings-ease),
+    box-shadow var(--kivo-duration-base) var(--settings-ease),
+    transform var(--kivo-duration-fast) var(--settings-ease);
+}
+
+.spatial-settings-tab:hover:not(.spatial-settings-tab--active) {
+  color: var(--spatial-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.spatial-settings-tab--active {
+  color: #0a0a0a;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.12) 100%),
+    var(--kivo-accent);
+  box-shadow:
+    0 6px 20px rgba(217, 249, 157, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+.spatial-settings-tab-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  color: var(--spatial-neon);
+  opacity: 0.85;
+  transition: opacity 0.3s ease;
+}
+
+.spatial-settings-tab--active .spatial-settings-tab-icon {
+  opacity: 1;
+}
+
+.spatial-settings-tab-icon svg {
+  width: 16px;
+  height: 16px;
+}
+
+.spatial-settings-tab-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #0a0a0a;
+  color: var(--kivo-accent);
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}
+
+.spatial-settings-tab--active .spatial-settings-tab-icon {
+  color: #0a0a0a;
+}
+
+/* —— Panel stage & transitions —— */
+.spatial-settings-stage {
+  position: relative;
+  min-height: 200px;
+}
+
+.spatial-settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: settings-panel-in var(--kivo-duration-enter) var(--settings-ease) both;
+}
+
+@keyframes settings-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes settings-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* —— Profile —— */
+.spatial-settings-profile-card {
+  padding: 22px 24px;
+  transition: transform var(--kivo-duration-fast) var(--settings-ease), box-shadow var(--kivo-duration-fast) var(--settings-ease);
+}
+
+.spatial-settings-profile-card:hover {
+  transform: translateY(-2px);
+}
+
+.spatial-settings-stats {
+  margin-bottom: 16px;
+}
+
+.spatial-stat-value--text {
+  font-size: 1.05rem !important;
+  letter-spacing: -0.01em;
+}
+
+.spatial-settings-api-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(217, 249, 157, 0.2);
+  background: rgba(217, 249, 157, 0.06);
+}
+
+.spatial-settings-api-url {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--kivo-accent);
+  word-break: break-all;
+  text-shadow: 0 0 16px rgba(217, 249, 157, 0.18);
+}
+
+/* —— Security form —— */
+.spatial-settings-panel--security {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 560px;
+}
+
+.spatial-settings .platform-settings-security-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  grid-template-columns: unset !important;
+}
+
+.spatial-settings-form-card {
+  padding: 24px;
+  transition: transform var(--kivo-duration-fast) var(--settings-ease), box-shadow var(--kivo-duration-fast) var(--settings-ease);
+}
+
+.spatial-settings-form-card:hover {
+  transform: translateY(-2px);
+}
+
+.spatial-settings-form-actions {
+  margin-top: 4px;
+}
+
+/* —— Admin grid —— */
+.spatial-settings-admin-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.spatial-settings-admin-card {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform var(--kivo-duration-fast) var(--settings-ease), box-shadow var(--kivo-duration-fast) var(--settings-ease);
+}
+
+.spatial-settings-admin-card:hover {
+  transform: translateY(-2px);
+}
+
+.spatial-settings-admin-card--wide {
+  grid-column: 1 / -1;
+}
+
+.spatial-settings-admin-card h3,
+.spatial-settings-card-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--spatial-text);
+  letter-spacing: -0.01em;
+}
+
+.spatial-settings-card-desc {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--spatial-text-soft);
+}
+
+.spatial-settings-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* —— Lists —— */
+.spatial-settings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spatial-settings-list-empty {
+  margin: 0;
+  padding: 12px 0;
+  font-size: 0.82rem;
+  color: var(--spatial-text-muted);
+}
+
+.spatial-settings-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease,
+    transform 0.25s var(--settings-ease);
+}
+
+.spatial-settings-list-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.spatial-settings-list-item--stack {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+}
+
+.spatial-settings-list-item strong {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--spatial-text);
+}
+
+.spatial-settings-list-item span {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.74rem;
+  color: var(--spatial-text-soft);
+}
+
+/* —— Form fields inside settings —— */
+.spatial-settings .platform-settings-field-label {
+  color: var(--spatial-text-muted);
+}
+
+.spatial-settings .platform-settings-field input,
+.spatial-settings .auth-screen-password-wrap input,
+.spatial-settings .platform-settings-select {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--spatial-text);
+  border-radius: 14px;
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease,
+    background 0.25s ease;
+}
+
+.spatial-settings .platform-settings-field input::placeholder,
+.spatial-settings .auth-screen-password-wrap input::placeholder {
+  color: rgba(255, 255, 255, 0.32);
+}
+
+.spatial-settings .platform-settings-field input:focus,
+.spatial-settings .auth-screen-password-wrap input:focus,
+.spatial-settings .platform-settings-select:focus {
+  border-color: rgba(217, 249, 157, 0.4);
+  box-shadow: 0 0 0 3px rgba(217, 249, 157, 0.1);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.spatial-settings .auth-screen-password-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.spatial-settings .auth-screen-password-wrap input {
+  width: 100%;
+  padding-right: 48px;
+}
+
+.spatial-settings .auth-screen-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--kivo-accent);
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.spatial-settings .auth-screen-password-toggle svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.spatial-settings .auth-screen-password-toggle:hover:not(:disabled) {
+  color: var(--kivo-accent-strong);
+  background: rgba(217, 249, 157, 0.12);
+  transform: translateY(-50%) scale(1.05);
+}
+
+.spatial-settings .auth-screen-password-toggle:focus-visible {
+  outline: 2px solid rgba(217, 249, 157, 0.4);
+  outline-offset: 2px;
+}
+
+.spatial-settings .platform-settings-block-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.spatial-settings .btn-secondary {
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--spatial-text-soft);
+  backdrop-filter: blur(12px);
+  transition:
+    border-color 0.25s ease,
+    background 0.25s ease,
+    color 0.25s ease,
+    transform 0.2s var(--settings-ease);
+}
+
+.spatial-settings .btn-secondary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: var(--spatial-text);
+  background: rgba(255, 255, 255, 0.11);
+  transform: translateY(-1px);
+}
+
+.spatial-settings .platform-settings-approve-btn {
+  border-radius: 999px !important;
+  border: 1px solid rgba(217, 249, 157, 0.45) !important;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.08) 100%),
+    var(--kivo-accent) !important;
+  color: #0a0a0a !important;
+  font-weight: 700 !important;
+  box-shadow:
+    0 8px 22px rgba(217, 249, 157, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.38) !important;
+  transition:
+    filter 0.25s ease,
+    transform 0.2s var(--settings-ease),
+    box-shadow 0.25s ease !important;
+}
+
+.spatial-settings .platform-settings-approve-btn:hover:not(:disabled) {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.1) 100%),
+    var(--kivo-accent-strong) !important;
+  box-shadow: 0 10px 28px rgba(217, 249, 157, 0.28) !important;
+}
+
+.spatial-settings .platform-settings-feedback--error {
+  color: #fca5a5;
+}
+
+.spatial-settings .platform-settings-feedback--ok {
+  color: #bef264;
+}
+
+.spatial-settings .platform-settings-reset-link-box {
+  border-radius: 14px;
+  border: 1px solid rgba(217, 249, 157, 0.24);
+  background: rgba(217, 249, 157, 0.06);
+}
+
+.spatial-settings .platform-settings-reset-link-url {
+  color: var(--kivo-accent);
+  transition: opacity 0.2s ease;
+}
+
+.spatial-settings .platform-settings-reset-link-url:hover {
+  opacity: 0.85;
+}
+
+.spatial-settings .platform-automation-access-grid .subtitle {
+  color: var(--spatial-text-soft);
+}
+
+.spatial-settings .platform-automation-access-check {
+  color: var(--spatial-text);
+}
+
+.spatial-settings .platform-settings-admin-section {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.spatial-settings .platform-settings-admin-section h4 {
+  color: var(--spatial-text);
+}
+
+/* Acentos KIVO no lugar do azul spatial da home */
+.spatial-settings .spatial-eyebrow {
+  color: var(--kivo-accent);
+  text-shadow: 0 0 20px rgba(217, 249, 157, 0.2);
+}
+
+.spatial-settings .spatial-pill-dot {
+  background: var(--kivo-accent);
+  box-shadow:
+    0 0 14px rgba(217, 249, 157, 0.45),
+    0 0 28px rgba(217, 249, 157, 0.18);
+}
+
+.spatial-settings .spatial-live-badge {
+  border-color: rgba(217, 249, 157, 0.32);
+  background: rgba(217, 249, 157, 0.1);
+  color: var(--kivo-accent);
+}
+
+.spatial-settings .spatial-live-dot {
+  background: var(--kivo-accent);
+  box-shadow: 0 0 10px rgba(217, 249, 157, 0.4);
+}
+
+.spatial-settings .spatial-stat--active .spatial-stat-value {
+  color: var(--kivo-accent);
+  text-shadow: 0 0 20px rgba(217, 249, 157, 0.28);
+}
+
+.spatial-settings .spatial-hero-robot {
+  color: var(--kivo-accent);
+  filter: drop-shadow(0 0 12px rgba(217, 249, 157, 0.35));
+}
+
+/* —— Footer —— */
+.spatial-settings-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 4px;
+  animation: settings-rise var(--kivo-duration-enter) var(--settings-ease) 0.08s both;
+}
+
+.spatial-settings-logout {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  padding: 10px 20px;
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.04) 100%),
+    rgba(14, 16, 24, 0.28);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  color: var(--spatial-text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow:
+    0 10px 28px rgba(10, 16, 32, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition:
+    transform 0.3s var(--settings-ease),
+    border-color 0.3s ease,
+    background 0.3s ease;
+}
+
+.platform-shell .spatial-settings .spatial-settings-logout:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.3);
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.06) 100%),
+    rgba(14, 16, 24, 0.34);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spatial-settings-hero,
+  .spatial-settings-alert,
+  .spatial-settings-nav,
+  .spatial-settings-panel,
+  .spatial-settings-footer {
+    animation: none;
+  }
+
+  .spatial-settings-tab,
+  .spatial-settings-list-item,
+  .spatial-settings-profile-card,
+  .spatial-settings-form-card,
+  .spatial-settings-admin-card,
+  .spatial-settings-logout,
+  .spatial-settings .btn-secondary,
+  .spatial-settings .platform-settings-approve-btn {
+    transition: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .spatial-settings-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 12px 16px;
+  }
+
+  .spatial-settings-hero-mascot {
+    display: none;
+  }
+
+  .spatial-settings-admin-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .spatial-settings-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .spatial-settings-nav {
+    width: 100%;
+    border-radius: 20px;
+  }
+
+  .spatial-settings-tab {
+    flex: 1 1 auto;
+    justify-content: center;
+    padding: 10px 12px;
+    font-size: 0.74rem;
+  }
+
+  .spatial-settings-tab-icon {
+    display: none;
+  }
+
+  .spatial-settings-panel--security {
+    max-width: none;
+  }
+}

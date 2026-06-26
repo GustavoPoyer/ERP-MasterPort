@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { SettingsLoadingButton } from "./settings/SettingsLoadingButton";
+import type { SettingsToastTone } from "./settings/useSettingsToasts";
 
 type AutomationClient = {
   id: number;
@@ -18,16 +20,15 @@ type UserProfile = {
 
 type AutomationClientAccessPanelProps = {
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
+  onNotify?: (tone: SettingsToastTone, message: string) => void;
 };
 
-export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccessPanelProps) {
+export function AutomationClientAccessPanel({ apiFetch, onNotify }: AutomationClientAccessPanelProps) {
   const [lookupUsername, setLookupUsername] = useState("");
   const [user, setUser] = useState<UserProfile | null>(null);
   const [clients, setClients] = useState<AutomationClient[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
 
   const loadClients = useCallback(async () => {
     const [impoRes, expoRes] = await Promise.all([
@@ -45,8 +46,6 @@ export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccess
 
   async function handleLookup(e: React.FormEvent) {
     e.preventDefault();
-    setError("");
-    setMessage("");
     setUser(null);
     setSelectedIds([]);
     setBusy(true);
@@ -66,8 +65,9 @@ export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccess
         const access = (await accessRes.json()) as { client_ids: number[] };
         setSelectedIds(access.client_ids ?? []);
       }
+      onNotify?.("success", `Usuário ${profile.username} carregado.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao buscar usuário.");
+      onNotify?.("error", err instanceof Error ? err.message : "Erro ao buscar usuário.");
     } finally {
       setBusy(false);
     }
@@ -76,8 +76,6 @@ export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccess
   async function handleSave() {
     if (!user) return;
     setBusy(true);
-    setError("");
-    setMessage("");
     try {
       const res = await apiFetch(`/automation-clients/users/${user.id}/access`, {
         method: "PUT",
@@ -88,9 +86,9 @@ export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccess
         const body = await res.json().catch(() => ({}));
         throw new Error(body?.detail || "Não foi possível salvar.");
       }
-      setMessage(`Acesso de clientes atualizado para ${user.username}.`);
+      onNotify?.("success", `Acesso de clientes atualizado para ${user.username}.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao salvar.");
+      onNotify?.("error", err instanceof Error ? err.message : "Erro ao salvar.");
     } finally {
       setBusy(false);
     }
@@ -104,12 +102,11 @@ export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccess
   const expoClients = clients.filter((c) => c.flow === "exportacao");
 
   return (
-    <div className="platform-settings-admin-section">
-      <h4>Acesso a clientes (Operações)</h4>
-      <p className="platform-settings-block-desc">
+    <div className="spatial-settings-access-panel">
+      <h3>Acesso a clientes (Operações)</h3>
+      <p className="spatial-settings-card-desc">
         Restringe quais clientes o usuário enxerga em automações com visibilidade <b>cliente</b>.
-        Se você nunca salvou aqui, o usuário do setor Operações vê todos os clientes. Ao marcar clientes e
-        salvar, o acesso fica limitado à seleção.
+        Se nunca salvou aqui, o usuário do setor Operações vê todos os clientes.
       </p>
 
       <form className="platform-settings-admin-reset-row" onSubmit={handleLookup}>
@@ -120,28 +117,31 @@ export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccess
             placeholder="nome de usuário"
             value={lookupUsername}
             onChange={(e) => setLookupUsername(e.target.value)}
+            disabled={busy}
           />
         </label>
-        <button type="submit" className="platform-settings-approve-btn" disabled={busy}>
+        <SettingsLoadingButton type="submit" className="platform-settings-approve-btn" loading={busy} loadingLabel="Buscando…">
           Buscar
-        </button>
+        </SettingsLoadingButton>
       </form>
 
       {user && (
-        <div className="platform-automation-access-grid">
-          <p className="subtitle">
-            <b>{user.username}</b> · setor {user.sector}
+        <div className="spatial-settings-access-grid">
+          <p className="spatial-settings-access-user">
+            <strong>{user.username}</strong>
+            <span>setor {user.sector}</span>
           </p>
 
           {impoClients.length > 0 && (
-            <div className="platform-automation-access-flow">
+            <div className="spatial-settings-access-flow">
               <strong>Importação</strong>
               {impoClients.map((client) => (
-                <label key={client.id} className="platform-automation-access-check">
+                <label key={client.id} className="spatial-settings-access-check">
                   <input
                     type="checkbox"
                     checked={selectedIds.includes(client.id)}
                     onChange={() => toggleClient(client.id)}
+                    disabled={busy}
                   />
                   {client.name}
                 </label>
@@ -150,14 +150,15 @@ export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccess
           )}
 
           {expoClients.length > 0 && (
-            <div className="platform-automation-access-flow">
+            <div className="spatial-settings-access-flow">
               <strong>Exportação</strong>
               {expoClients.map((client) => (
-                <label key={client.id} className="platform-automation-access-check">
+                <label key={client.id} className="spatial-settings-access-check">
                   <input
                     type="checkbox"
                     checked={selectedIds.includes(client.id)}
                     onChange={() => toggleClient(client.id)}
+                    disabled={busy}
                   />
                   {client.name}
                 </label>
@@ -165,14 +166,17 @@ export function AutomationClientAccessPanel({ apiFetch }: AutomationClientAccess
             </div>
           )}
 
-          <button type="button" className="platform-settings-approve-btn" disabled={busy} onClick={handleSave}>
+          <SettingsLoadingButton
+            type="button"
+            className="platform-settings-approve-btn"
+            loading={busy}
+            loadingLabel="Salvando…"
+            onClick={() => handleSave().catch(() => null)}
+          >
             Salvar acesso
-          </button>
+          </SettingsLoadingButton>
         </div>
       )}
-
-      {error && <p className="platform-settings-feedback platform-settings-feedback--error">{error}</p>}
-      {message && <p className="platform-settings-feedback platform-settings-feedback--ok">{message}</p>}
     </div>
   );
 }

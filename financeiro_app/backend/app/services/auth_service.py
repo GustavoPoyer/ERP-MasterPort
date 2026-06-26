@@ -69,6 +69,25 @@ def revoke_session(db: Session, token: str) -> None:
     db.commit()
 
 
+def revoke_user_session_by_id(
+    db: Session,
+    user_id: int,
+    session_id: int,
+    *,
+    except_token: str | None = None,
+) -> bool:
+    row = db.scalar(
+        select(AppSession).where(AppSession.id == session_id, AppSession.user_id == user_id).limit(1)
+    )
+    if not row:
+        return False
+    if except_token and row.token == except_token:
+        return False
+    db.delete(row)
+    db.commit()
+    return True
+
+
 def revoke_all_sessions_for_user(
     db: Session,
     user_id: int,

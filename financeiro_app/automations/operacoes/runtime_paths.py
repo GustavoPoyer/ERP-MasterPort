@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -43,3 +44,63 @@ def resolve_output_path(
         else:
             explicit = str(Path(root) / "output" / "operacoes" / default_name)
     return ensure_parent_dir(os.path.abspath(explicit))
+
+
+def _load_json_env(env_key: str) -> dict:
+    raw = os.environ.get(env_key, "").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def get_form_parameters() -> dict[str, str]:
+    form = _load_json_env("OPERACOES_PARAMETERS_JSON")
+    return {str(key): str(value) for key, value in form.items() if value is not None}
+
+
+def get_form_value(key: str, default: str = "") -> str:
+    value = get_form_parameters().get(key)
+    if value is not None and str(value).strip():
+        return str(value).strip()
+    env_key = f"OPERACOES_PARAM_{key.upper()}"
+    env_value = os.environ.get(env_key, "").strip()
+    return env_value or default
+
+
+def get_files_by_slot() -> dict[str, list[str]]:
+    data = _load_json_env("OPERACOES_FILES_JSON")
+    result: dict[str, list[str]] = {}
+    for slot, paths in data.items():
+        if not isinstance(paths, list):
+            continue
+        valid = [os.path.abspath(str(path)) for path in paths if path and os.path.isfile(str(path))]
+        if valid:
+            result[str(slot)] = valid
+    return result
+
+
+def get_slot_files(slot_key: str) -> list[str]:
+    slot = (slot_key or "").strip().lower()
+    if not slot:
+        return []
+    files_by_slot = get_files_by_slot()
+    for key, paths in files_by_slot.items():
+        if key.strip().lower() == slot:
+            return list(paths)
+    return []
+
+
+def load_run_manifest() -> dict:
+    manifest_path = os.environ.get("OPERACOES_RUN_MANIFEST", "").strip()
+    if not manifest_path or not os.path.isfile(manifest_path):
+        return {}
+    try:
+        with open(manifest_path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}

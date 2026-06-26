@@ -50,6 +50,8 @@ class Settings:
     sigra_password: str = os.getenv("SIGRA_PASSWORD", "").strip()
     sigra_empresa_id: str = os.getenv("SIGRA_EMPRESA_ID", "").strip()
     sigra_kanban_page_limit: int = int(os.getenv("SIGRA_KANBAN_PAGE_LIMIT", "1000"))
+    app_env: str = os.getenv("APP_ENV", "development").strip() or "development"
+    app_version: str = os.getenv("APP_VERSION", "0.1.0").strip() or "0.1.0"
 
 
 settings = Settings()

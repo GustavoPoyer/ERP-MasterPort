@@ -1,0 +1,135 @@
+.kivo-boot-screen {
+  position: relative;
+  z-index: 1;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.kivo-boot-card {
+  position: relative;
+  width: min(100%, 380px);
+  padding: 32px 28px 26px;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background:
+    radial-gradient(ellipse 120% 90% at 50% -20%, rgba(217, 249, 157, 0.18), transparent 58%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05)),
+    rgba(18, 20, 28, 0.62);
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  box-shadow:
+    0 32px 80px rgba(15, 23, 42, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  text-align: center;
+  overflow: hidden;
+  animation: kivo-boot-card-in var(--kivo-duration-enter, 0.32s) var(--kivo-ease-out, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  transition:
+    opacity var(--kivo-duration-fast, 0.18s) var(--kivo-ease, ease),
+    transform var(--kivo-duration-fast, 0.18s) var(--kivo-ease, ease);
+}
+
+.kivo-boot-screen--exit .kivo-boot-card {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+  pointer-events: none;
+}
+
+.kivo-boot-screen--exit {
+  pointer-events: none;
+}
+
+@keyframes kivo-boot-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.kivo-boot-glow {
+  position: absolute;
+  inset: -40% -20% auto;
+  height: 70%;
+  background: radial-gradient(circle at 50% 50%, rgba(217, 249, 157, 0.22), transparent 68%);
+  pointer-events: none;
+  filter: blur(18px);
+}
+
+.kivo-boot-logo {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 22px;
+}
+
+.kivo-boot-logo-img {
+  width: auto;
+  height: 46px;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.25));
+}
+
+.kivo-boot-card .kivo-loader-wrap {
+  position: relative;
+  margin: 0 auto 6px;
+}
+
+.kivo-boot-card .kivo-loader-label {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.84rem;
+}
+
+.kivo-boot-subtitle {
+  margin: 10px 0 0;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.52);
+  font-weight: 500;
+}
+
+.kivo-boot-progress {
+  margin-top: 22px;
+  height: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.kivo-boot-progress-bar {
+  display: block;
+  width: 36%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(217, 249, 157, 0.35), var(--kivo-accent, #d9f99d));
+  box-shadow: 0 0 12px rgba(217, 249, 157, 0.45);
+  animation: kivo-boot-progress 1.35s var(--kivo-ease, ease-in-out) infinite;
+}
+
+@keyframes kivo-boot-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kivo-boot-card,
+  .kivo-boot-progress-bar {
+    animation: none;
+  }
+
+  .kivo-boot-progress-bar {
+    width: 55%;
+    margin: 0 auto;
+    transform: none;
+  }
+}

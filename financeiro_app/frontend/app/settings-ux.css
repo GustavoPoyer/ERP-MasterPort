@@ -1,0 +1,819 @@
+/* —— Configurações · UX (toast, modal, copy, loading) —— */
+
+body > .settings-modal-backdrop,
+body > .settings-toast-stack {
+  position: fixed;
+  z-index: 1500;
+}
+
+.settings-toast-stack {
+  top: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(calc(100vw - 32px), 380px);
+  pointer-events: none;
+}
+
+.settings-toast {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0.05) 100%),
+    rgba(18, 20, 28, 0.82);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  box-shadow: 0 16px 40px rgba(10, 16, 32, 0.22);
+  color: rgba(255, 255, 255, 0.94);
+  pointer-events: auto;
+  animation: settings-toast-in var(--kivo-duration-enter) var(--kivo-ease) both;
+}
+
+@keyframes settings-toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.settings-toast--success {
+  border-color: rgba(217, 249, 157, 0.35);
+}
+
+.settings-toast--success .settings-toast-icon {
+  color: var(--kivo-accent);
+}
+
+.settings-toast--error {
+  border-color: rgba(252, 165, 165, 0.35);
+}
+
+.settings-toast--error .settings-toast-icon {
+  color: #fca5a5;
+}
+
+.settings-toast--info .settings-toast-icon {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.settings-toast-icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
+
+.settings-toast-message {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.settings-toast-dismiss {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.settings-toast-dismiss:hover {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(214, 220, 232, 0.42);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  animation: settings-modal-backdrop-in var(--kivo-duration-fast) var(--kivo-ease) both;
+}
+
+@keyframes settings-modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.settings-modal {
+  width: min(100%, 440px);
+  padding: 22px 24px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background:
+    radial-gradient(ellipse 100% 80% at 50% 0%, rgba(217, 249, 157, 0.14), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.05)),
+    rgba(24, 26, 34, 0.78);
+  backdrop-filter: blur(36px) saturate(180%);
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  box-shadow:
+    0 28px 72px rgba(15, 23, 42, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  animation: settings-modal-in var(--kivo-duration-enter) var(--kivo-ease-out) both;
+}
+
+@keyframes settings-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.settings-modal h3 {
+  margin: 0 0 10px;
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: #fafafa;
+}
+
+.settings-modal-desc {
+  margin: 0 0 18px;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.68);
+}
+
+.settings-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.platform-settings-approve-btn,
+.settings-modal-confirm {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.settings-modal-confirm--danger {
+  border-color: rgba(252, 165, 165, 0.45) !important;
+  background: linear-gradient(135deg, rgba(254, 202, 202, 0.95) 0%, rgba(248, 113, 113, 0.9) 100%) !important;
+  color: #450a0a !important;
+}
+
+.settings-copy-btn {
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.82);
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.platform-shell .spatial-settings .settings-copy-btn:hover:not(:disabled) {
+  border-color: rgba(217, 249, 157, 0.35);
+  background: rgba(217, 249, 157, 0.1);
+  color: var(--kivo-accent);
+}
+
+.settings-copy-btn--copied {
+  border-color: rgba(217, 249, 157, 0.45);
+  background: rgba(217, 249, 157, 0.16);
+  color: var(--kivo-accent);
+}
+
+.spatial-settings-api-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.spatial-settings-api-row > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.spatial-settings-reset-link-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spatial-settings-reset-link-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.spatial-settings-reset-link-row .platform-settings-reset-link-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-field-hint {
+  margin: 6px 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.settings-field-hint--error {
+  color: #fca5a5;
+}
+
+.settings-field-hint--ok {
+  color: #bef264;
+}
+
+.platform-settings-field--invalid input,
+.platform-settings-field--invalid .auth-screen-password-wrap input {
+  border-color: rgba(252, 165, 165, 0.55) !important;
+}
+
+.settings-loading-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.settings-btn-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(10, 10, 10, 0.18);
+  border-top-color: rgba(10, 10, 10, 0.72);
+  animation: settings-spin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+
+.btn-secondary .settings-btn-spinner {
+  border-color: rgba(255, 255, 255, 0.18);
+  border-top-color: rgba(255, 255, 255, 0.82);
+}
+
+@keyframes settings-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spatial-settings-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spatial-settings-skeleton {
+  height: 52px;
+  border-radius: 16px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: settings-skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes settings-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.spatial-settings--busy {
+  pointer-events: none;
+}
+
+.spatial-settings--busy .spatial-settings-stage {
+  opacity: 0.72;
+  transition: opacity 0.2s ease;
+}
+
+@media (max-width: 520px) {
+  .settings-toast-stack {
+    top: auto;
+    bottom: 88px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+  }
+
+  .spatial-settings-api-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.spatial-settings-panel--security {
+  max-width: 560px;
+}
+
+.spatial-settings-block-title {
+  margin: 0 0 14px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.spatial-settings-sessions-card {
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.spatial-settings-sessions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spatial-settings-session-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.spatial-settings-session-item--current {
+  border-color: rgba(217, 249, 157, 0.28);
+  background: rgba(217, 249, 157, 0.06);
+}
+
+.spatial-settings-session-item strong {
+  display: block;
+  font-size: 0.88rem;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.spatial-settings-session-item span {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.spatial-settings-session-badge {
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(217, 249, 157, 0.35);
+  background: rgba(217, 249, 157, 0.1);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--kivo-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.spatial-settings-admin-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.spatial-settings-admin-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.62);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.25s ease,
+    background 0.25s ease,
+    color 0.25s ease,
+    transform 0.2s ease;
+}
+
+.platform-shell .spatial-settings .spatial-settings-admin-nav-btn:hover:not(.spatial-settings-admin-nav-btn--active):not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.09);
+  color: rgba(255, 255, 255, 0.88);
+}
+
+.spatial-settings-admin-nav-btn--active {
+  border-color: rgba(217, 249, 157, 0.35);
+  background: rgba(217, 249, 157, 0.12);
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.spatial-settings-search input {
+  width: 100%;
+}
+
+.spatial-settings-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 28px 20px;
+  border-radius: 18px;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.spatial-settings-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--kivo-accent);
+  margin-bottom: 4px;
+}
+
+.spatial-settings-empty-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.spatial-settings-empty strong {
+  font-size: 0.92rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.spatial-settings-empty p {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.spatial-settings-empty-cta {
+  margin-top: 8px;
+}
+
+.spatial-settings-access-panel h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.spatial-settings-access-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.spatial-settings-access-user {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.spatial-settings-access-user strong {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.spatial-settings-access-user span {
+  font-size: 0.76rem;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.spatial-settings-access-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.spatial-settings-access-flow strong {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.82);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.spatial-settings-access-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.88);
+  cursor: pointer;
+}
+
+.spatial-settings-access-check input {
+  accent-color: var(--kivo-accent);
+}
+
+/* —— Pacote 3: perfil, senha, auditoria —— */
+.spatial-settings-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.spatial-settings-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #0a0a0a;
+  background: linear-gradient(145deg, var(--kivo-accent) 0%, #bef264 100%);
+  box-shadow: 0 8px 24px rgba(217, 249, 157, 0.22);
+}
+
+.spatial-settings-profile-name {
+  display: block;
+  font-size: 1.02rem;
+  color: rgba(255, 255, 255, 0.94);
+}
+
+.spatial-settings-profile-meta {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.spatial-settings-profile-form {
+  margin-bottom: 16px;
+}
+
+.spatial-settings-profile-stats,
+.spatial-settings-env-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.spatial-settings-notify-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 8px 0 14px;
+}
+
+.settings-password-strength {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-password-strength-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.settings-password-strength-head strong {
+  color: var(--kivo-accent);
+  font-size: 0.74rem;
+}
+
+.settings-password-strength-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.settings-password-strength-segment {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.settings-password-strength-segment--1 {
+  background: #f87171;
+}
+
+.settings-password-strength-segment--2 {
+  background: #fbbf24;
+}
+
+.settings-password-strength-segment--3 {
+  background: #bef264;
+}
+
+.settings-password-strength-segment--4 {
+  background: var(--kivo-accent);
+}
+
+.settings-password-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-password-checklist li {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.settings-password-checklist li.is-ok {
+  color: #bef264;
+}
+
+.spatial-settings-admin-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.spatial-settings-user-list .spatial-settings-list-item {
+  align-items: flex-start;
+}
+
+.spatial-settings-user-since {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.spatial-settings-audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spatial-settings-audit-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.spatial-settings-audit-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.spatial-settings-audit-main strong {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.spatial-settings-audit-main span {
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.spatial-settings-audit-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.46);
+}
+
+.spatial-settings-panel--admin {
+  gap: 14px;
+}
+
+.spatial-settings-panel--admin .spatial-settings-admin-card {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .spatial-settings-panel--security {
+    max-width: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-toast,
+  .settings-modal-backdrop,
+  .settings-modal,
+  .spatial-settings-skeleton {
+    animation: none;
+  }
+}
+
+/* —— Hover KIVO: neutraliza button:hover azul do .platform-shell —— */
+.platform-shell .spatial-settings button:hover:not(:disabled) {
+  color: inherit;
+}
+
+.platform-shell .spatial-settings .spatial-settings-tab:hover:not(.spatial-settings-tab--active):not(:disabled) {
+  color: var(--spatial-text);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.platform-shell .spatial-settings .btn-secondary:hover:not(:disabled),
+.platform-shell .spatial-settings .settings-loading-btn.btn-secondary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: var(--spatial-text);
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.platform-shell .spatial-settings .platform-settings-approve-btn:hover:not(:disabled),
+.platform-shell .spatial-settings .settings-loading-btn.platform-settings-approve-btn:hover:not(:disabled) {
+  filter: brightness(1.04);
+  transform: translateY(-1px);
+  background:
+    linear-gradient(155deg, rgba(255, 255, 255, 0.32) 0%, rgba(255, 255, 255, 0.1) 100%),
+    var(--kivo-accent-strong) !important;
+  box-shadow: 0 10px 28px rgba(217, 249, 157, 0.28) !important;
+  color: #0a0a0a !important;
+}
+
+.platform-shell .spatial-settings .auth-screen-password-toggle:hover:not(:disabled) {
+  color: var(--kivo-accent-strong);
+  background: rgba(217, 249, 157, 0.12);
+}
+
+.settings-modal .btn-secondary:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: rgba(255, 255, 255, 0.94);
+  background: rgba(255, 255, 255, 0.11) !important;
+}
+
+.settings-modal .platform-settings-approve-btn:hover:not(:disabled),
+.settings-modal .settings-modal-confirm:hover:not(:disabled) {
+  filter: brightness(1.04);
+  background: var(--kivo-accent-strong) !important;
+  color: #0a0a0a !important;
+}
+
+.settings-modal .settings-modal-confirm--danger:hover:not(:disabled) {
+  filter: brightness(1.05);
+  background: linear-gradient(135deg, rgba(254, 202, 202, 0.98) 0%, rgba(248, 113, 113, 0.95) 100%) !important;
+}

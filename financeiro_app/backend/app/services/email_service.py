@@ -85,10 +85,14 @@ def send_email(
     return sent_any
 
 
-def send_admin_pending_registration_email(username: str, requested_sector: str) -> bool:
-    """Envia e-mail aos administradores quando há novo cadastro pendente."""
-    recipients = _admin_recipients()
-    if not recipients:
+def send_admin_pending_registration_email(
+    username: str,
+    requested_sector: str,
+    recipients: list[str] | None = None,
+) -> bool:
+    """Envia e-mail quando há novo cadastro pendente."""
+    unique = recipients or _admin_recipients()
+    if not unique:
         return False
 
     settings_url = public_app_url("/?view=configuracoes")
@@ -120,7 +124,7 @@ def send_admin_pending_registration_email(username: str, requested_sector: str) 
         html_lines.append(f"<p>{html.escape(follow_up)}</p>")
 
     return send_email(
-        recipients,
+        unique,
         f"KIVO — Novo cadastro pendente: {username}",
         body,
         html_body="\n".join(html_lines),

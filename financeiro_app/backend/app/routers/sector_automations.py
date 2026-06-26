@@ -15,6 +15,7 @@ from ..services.automation_catalog import (
     slugify_key,
     validate_script_path,
 )
+from ..services.automation_form_schema import dump_input_schema
 
 router = APIRouter(prefix="/sector-automations", tags=["sector-automations"])
 
@@ -112,6 +113,11 @@ def create_automation(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    try:
+        input_schema_json = dump_input_schema(payload.input_schema or [])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     row = SectorAutomation(
         sector=sector,
         flow=flow,
@@ -124,6 +130,7 @@ def create_automation(
         sort_order=payload.sort_order,
         is_active=1,
         created_by=user.username,
+        input_schema_json=input_schema_json,
     )
     db.add(row)
     db.commit()
@@ -147,6 +154,11 @@ def update_automation(
         raise HTTPException(status_code=403, detail="Somente admin edita automações globais.")
 
     data = payload.model_dump(exclude_unset=True)
+    if "input_schema" in data:
+        try:
+            data["input_schema_json"] = dump_input_schema(data.pop("input_schema") or [])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     if "script_path" in data and data["script_path"]:
         try:
             data["script_path"] = validate_script_path(settings.automation_workspace, data["script_path"])

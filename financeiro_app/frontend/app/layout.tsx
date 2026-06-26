@@ -1,6 +1,11 @@
 import "./globals.css";
+import "./motion.css";
 import "./responsive.css";
 import "./fila.css";
+import "./home.css";
+import "./settings.css";
+import "./settings-ux.css";
+import "./platform-kivo-theme.css";
 import type { ReactNode } from "react";
 import { Inter } from "next/font/google";
 import { KivoBackground } from "../components/KivoBackground";

@@ -3,9 +3,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import FinanceAccount, ReconciliationRun
+from ..models import FinanceAccount, ReconciliationRun, AppUser
 from ..schemas import FinanceAccountCreate, FinanceAccountRead, FinanceAccountUpdate
 from ..services.account_service import ALLOWED_BANKS, get_active_account, slugify_account
+from ..services.audit_service import record_audit
 from ..services.auth_service import require_admin, require_sector
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -38,7 +39,7 @@ def list_accounts(
 def create_account(
     payload: FinanceAccountCreate,
     db: Session = Depends(get_db),
-    _admin: object = Depends(require_admin),
+    admin: AppUser = Depends(require_admin),
 ):
     bank = payload.bank.strip().lower()
     if bank not in ALLOWED_BANKS:
@@ -77,6 +78,13 @@ def create_account(
     db.add(account)
     db.commit()
     db.refresh(account)
+    record_audit(
+        db,
+        actor=admin,
+        action="account.create",
+        target_type="account",
+        target_label=f"{account.bank}/{account.name}",
+    )
     return FinanceAccountRead.model_validate(account)
 
 
@@ -85,7 +93,7 @@ def update_account(
     account_id: int,
     payload: FinanceAccountUpdate,
     db: Session = Depends(get_db),
-    _admin: object = Depends(require_admin),
+    admin: AppUser = Depends(require_admin),
 ):
     account = db.get(FinanceAccount, account_id)
     if not account:
@@ -100,7 +108,9 @@ def update_account(
     if payload.sort_order is not None:
         account.sort_order = payload.sort_order
 
+    previous_active = account.is_active
     if payload.is_active is not None:
+        previous_active = account.is_active
         account.is_active = 1 if payload.is_active else 0
         if account.is_active == 0:
             running = db.scalar(
@@ -119,6 +129,14 @@ def update_account(
 
     db.commit()
     db.refresh(account)
+    if payload.is_active is not None and previous_active != account.is_active:
+        record_audit(
+            db,
+            actor=admin,
+            action="account.deactivate" if account.is_active == 0 else "account.reactivate",
+            target_type="account",
+            target_label=f"{account.bank}/{account.name}",
+        )
     return FinanceAccountRead.model_validate(account)
 
 

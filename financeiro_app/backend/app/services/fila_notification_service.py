@@ -1,27 +1,11 @@
 import html
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import AppUser, AutomationQueueTicket
 from ..schemas_fila import SECTOR_LABELS, STATUS_LABELS
-from .email_service import _admin_recipients, public_app_url, send_email, smtp_available
-
-
-def collect_fila_status_recipients(db: Session, ticket: AutomationQueueTicket) -> list[str]:
-    recipients: set[str] = set(_admin_recipients())
-    if ticket.requester_email.strip():
-        recipients.add(ticket.requester_email.strip().lower())
-    if ticket.assigned_to.strip():
-        tech = db.scalar(
-            select(AppUser)
-            .where(AppUser.username == ticket.assigned_to.strip(), AppUser.is_active == 1)
-            .limit(1)
-        )
-        if tech and tech.contact_email.strip():
-            recipients.add(tech.contact_email.strip().lower())
-    return sorted(recipients)
-
+from .email_service import public_app_url, send_email, smtp_available
+from .notification_recipients_service import collect_fila_status_recipients
 
 def _build_fila_status_email_body(
     *,

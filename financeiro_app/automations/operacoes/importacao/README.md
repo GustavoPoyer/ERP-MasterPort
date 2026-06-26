@@ -36,13 +36,21 @@ No final do arquivo, garanta algo assim:
 
 ```python
 def main():
-    from runtime_paths import operacoes_app_root, resolve_input_folder, resolve_output_path
+    from runtime_paths import (
+        get_form_value,
+        get_slot_files,
+        operacoes_app_root,
+        resolve_input_folder,
+        resolve_output_path,
+    )
 
     app_root = operacoes_app_root()
     pasta_entrada = resolve_input_folder()  # arquivos enviados pela plataforma
     arquivo_saida = resolve_output_path(app_root=app_root, default_name="saida_importacao.xlsx")
+    fornecedor = get_form_value("fornecedor", "auto")
+    pdfs = get_slot_files("arquivo") or get_slot_files("anexo")
 
-    # TODO: use pasta_entrada e arquivo_saida na sua lógica
+    # TODO: use pasta_entrada, arquivo_saida, fornecedor e pdfs na sua lógica
     # ...
 
     print(f"Arquivo Excel gerado: {arquivo_saida}")  # o app detecta o caminho de saída
@@ -81,3 +89,10 @@ Se terminar sem erro, a integração com o backend funcionará.
 | `OPERACOES_INPUT_FOLDER` | Pasta com arquivos da rodada |
 | `OPERACOES_OUTPUT_PATH` | Caminho sugerido para o resultado |
 | `OPERACOES_RUN_ID` | ID da execução (se houver) |
+| `SECTOR_AUTOMATION_KEY` | Chave da automação cadastrada |
+| `OPERACOES_PARAMETERS_JSON` | Campos de texto do formulário (`{"fornecedor":"auto",...}`) |
+| `OPERACOES_FILES_JSON` | Arquivos por slot (`{"arquivo":["/caminho/a.pdf"]}`) |
+| `OPERACOES_RUN_MANIFEST` | Caminho do `operacoes_run_manifest.json` na pasta da rodada |
+| `OPERACOES_PARAM_<CAMPO>` | Atalho por campo (ex.: `OPERACOES_PARAM_FORNECEDOR`) |
+
+Helpers em `automations/operacoes/runtime_paths.py`: `get_form_value()`, `get_slot_files()`, `get_files_by_slot()`, `load_run_manifest()`.

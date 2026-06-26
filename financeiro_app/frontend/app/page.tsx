@@ -1,10 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useVirtualTableWindow } from "../lib/useVirtualTableWindow";
+import {
+  DATASET_MATCH_PAGE,
+  DATASET_STATUS_PAGE,
+  buildRunDatasetQuery,
+  isRunDatasetComplete,
+  mergeRunDatasetChunk,
+} from "../lib/runDataset";
 import Image from "next/image";
+import { AuthPasswordField } from "../components/AuthPasswordField";
+import { HomeDashboard } from "../components/HomeDashboard";
+import { SettingsPanel } from "../components/SettingsPanel";
+import {
+  readSettingsTabFromLocation,
+  settingsTabFromSlug,
+  clearPlatformViewQuery,
+  syncActiveViewUrl,
+  syncSettingsUrl,
+  type SettingsTab,
+} from "../components/settings/settingsTabUrl";
 import { KivoAssistant } from "../components/KivoAssistant";
-import { KivoRobot } from "../components/KivoRobot";
-import { AutomationClientAccessPanel } from "../components/AutomationClientAccessPanel";
 import { AutomationQueueModule } from "../components/AutomationQueueModule";
 import { OperacoesPanel } from "../components/OperacoesPanel";
 import { PedroKanban } from "../components/PedroKanban";
@@ -85,6 +102,9 @@ type RunDataset = {
   metric: RunMetric | null;
   matches: MatchRow[];
   statuses: StatusRow[];
+  statuses_total?: number;
+  matches_total?: number;
+  status_month_counts?: Record<string, number>;
 };
 
 type DocumentSlot = {
@@ -103,6 +123,37 @@ type AuthUser = {
   username: string;
   sector: string;
   role: string;
+  display_name?: string;
+  contact_email?: string;
+  notify_email_pending?: boolean;
+  notify_email_queue?: boolean;
+  created_at?: string;
+};
+
+type ActiveUser = {
+  id: number;
+  username: string;
+  display_name: string;
+  contact_email: string;
+  sector: string;
+  role: string;
+  created_at: string;
+};
+
+type AuditEntry = {
+  id: number;
+  actor_username: string;
+  action: string;
+  target_type: string;
+  target_label: string;
+  details: string;
+  created_at: string;
+};
+
+type AppInfo = {
+  api_version: string;
+  environment: string;
+  smtp_configured: boolean;
 };
 
 type PendingUser = {
@@ -110,6 +161,13 @@ type PendingUser = {
   username: string;
   requested_sector: string;
   created_at: string;
+};
+
+type UserSession = {
+  id: number;
+  created_at: string;
+  expires_at: string;
+  is_current: boolean;
 };
 
 function resolveApiBase(): string {
@@ -631,52 +689,6 @@ function parseBrDateToTs(dateValue: string): number {
   return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
 }
 
-function AuthPasswordField({
-  id,
-  placeholder,
-  value,
-  visible,
-  onToggleVisible,
-  autoComplete,
-  onChange,
-  onEnter,
-}: {
-  id: string;
-  placeholder: string;
-  value: string;
-  visible: boolean;
-  onToggleVisible: () => void;
-  autoComplete: string;
-  onChange: (value: string) => void;
-  onEnter?: () => void;
-}) {
-  return (
-    <div className="auth-screen-password-wrap">
-      <input
-        id={id}
-        type={visible ? "text" : "password"}
-        placeholder={placeholder}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        autoComplete={autoComplete}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") onEnter?.();
-        }}
-      />
-      <button
-        type="button"
-        className="auth-screen-password-toggle"
-        onClick={onToggleVisible}
-        title={visible ? "Pedir pro robô não olhar" : "Deixar o robô espiar a senha"}
-        aria-label={visible ? "Ocultar senha" : "Mostrar senha"}
-        aria-pressed={visible}
-      >
-        <KivoRobot mood={visible ? "peek" : "shy"} />
-      </button>
-    </div>
-  );
-}
-
 function FilterSearchInput({
   placeholder,
   value,
@@ -729,7 +741,21 @@ export default function HomePage() {
   const [adminBusy, setAdminBusy] = useState(false);
   const [adminMessage, setAdminMessage] = useState("");
   const [adminError, setAdminError] = useState("");
-  const [activeSessionCount, setActiveSessionCount] = useState(0);
+  const [activeSessions, setActiveSessions] = useState<UserSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revokingSessionId, setRevokingSessionId] = useState<number | null>(null);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("profile");
+  const [profileDisplayName, setProfileDisplayName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [notifyEmailPending, setNotifyEmailPending] = useState(true);
+  const [notifyEmailQueue, setNotifyEmailQueue] = useState(false);
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
+  const [activeUsersLoading, setActiveUsersLoading] = useState(false);
+  const [adminUserSearch, setAdminUserSearch] = useState("");
+  const [auditLog, setAuditLog] = useState<AuditEntry[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
   const [adminLookupUsername, setAdminLookupUsername] = useState("");
   const [adminResetLink, setAdminResetLink] = useState("");
   const [adminResetLinkFor, setAdminResetLinkFor] = useState("");
@@ -787,6 +813,13 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const [runsRefreshing, setRunsRefreshing] = useState(false);
   const [error, setError] = useState("");
+  const [isBankSwitchPending, startBankSwitch] = useTransition();
+  const planilhaScrollRef = useRef<HTMLDivElement>(null);
+  const matchesScrollRef = useRef<HTMLDivElement>(null);
+  const datasetCacheRef = useRef<Map<number, RunDataset>>(new Map());
+  const datasetLoadingMoreRef = useRef(false);
+  const selectedRunIdRef = useRef<number | null>(null);
+  const [datasetLoadingMore, setDatasetLoadingMore] = useState(false);
 
   const accountsForBank = useMemo(
     () =>
@@ -871,6 +904,15 @@ export default function HomePage() {
     [allStatuses],
   );
   const monthTabs = useMemo(() => {
+    const serverCounts = dataset?.status_month_counts;
+    if (serverCounts && Object.keys(serverCounts).length > 0) {
+      const total = dataset?.statuses_total ?? Object.values(serverCounts).reduce((acc, n) => acc + n, 0);
+      const keys = Object.keys(serverCounts).sort((a, b) => extratoTabOrder(a) - extratoTabOrder(b));
+      return [
+        { key: "todos", label: "Todos", count: total },
+        ...keys.map((key) => ({ key, label: extratoTabLabelFromKey(key), count: serverCounts[key] ?? 0 })),
+      ];
+    }
     const values = allStatuses;
     const map = new Map<string, number>();
     values.forEach((row) => {
@@ -882,7 +924,7 @@ export default function HomePage() {
       { key: "todos", label: "Todos", count: values.length },
       ...keys.map((key) => ({ key, label: extratoTabLabelFromKey(key), count: map.get(key) ?? 0 })),
     ];
-  }, [allStatuses]);
+  }, [allStatuses, dataset?.status_month_counts, dataset?.statuses_total]);
   const filteredStatuses = useMemo(() => {
     const rows = allStatuses;
     const needle = filterValue.trim().toLowerCase();
@@ -922,6 +964,12 @@ export default function HomePage() {
     });
     return rows;
   }, [filteredStatuses, statusSort]);
+  const planilhaVirtual = useVirtualTableWindow(sortedStatuses.length, planilhaScrollRef);
+  const visibleStatuses = useMemo(
+    () => sortedStatuses.slice(planilhaVirtual.startIndex, planilhaVirtual.endIndex),
+    [sortedStatuses, planilhaVirtual.endIndex, planilhaVirtual.startIndex],
+  );
+  const planilhaColSpan = bankView === "bb" ? 10 : 9;
   const balanceSummary = useMemo(() => {
     const rows = statusesForKpi;
     const totalExtratos = rows.reduce((acc, row) => acc + Number(row.valor_extrato || 0), 0);
@@ -974,6 +1022,13 @@ export default function HomePage() {
     });
     return rows;
   }, [filteredMatches, matchSort]);
+  const matchesVirtual = useVirtualTableWindow(sortedMatches.length, matchesScrollRef, 44);
+  const visibleMatches = useMemo(
+    () => sortedMatches.slice(matchesVirtual.startIndex, matchesVirtual.endIndex),
+    [sortedMatches, matchesVirtual.endIndex, matchesVirtual.startIndex],
+  );
+
+  const recentRuns = useMemo(() => runs.slice(0, 5), [runs]);
 
   const visibleSectors = useMemo(() => {
     if (!currentUser || currentUser.role === "admin") return SECTOR_MENU;
@@ -1009,6 +1064,94 @@ export default function HomePage() {
     }
     const data = (await res.json()) as AuthUser;
     setCurrentUser(data);
+    setProfileDisplayName(data.display_name || "");
+    setProfileEmail(data.contact_email || "");
+    setNotifyEmailPending(data.notify_email_pending ?? true);
+    setNotifyEmailQueue(data.notify_email_queue ?? false);
+  }
+
+  async function loadAppInfo() {
+    try {
+      const res = await fetch(`${API_BASE}/auth/app-info`, { cache: "no-store" });
+      if (!res.ok) return;
+      setAppInfo((await res.json()) as AppInfo);
+    } catch {
+      setAppInfo(null);
+    }
+  }
+
+  async function loadActiveUsers(search = adminUserSearch) {
+    setActiveUsersLoading(true);
+    try {
+      const q = search.trim();
+      const path = q ? `/auth/admin/users?search=${encodeURIComponent(q)}` : "/auth/admin/users";
+      const res = await apiFetch(path);
+      if (!res.ok) throw new Error("Não foi possível carregar usuários.");
+      setActiveUsers((await res.json()) as ActiveUser[]);
+    } finally {
+      setActiveUsersLoading(false);
+    }
+  }
+
+  async function loadAuditLog() {
+    setAuditLoading(true);
+    try {
+      const res = await apiFetch("/auth/admin/audit-log?limit=80");
+      if (!res.ok) throw new Error("Não foi possível carregar auditoria.");
+      setAuditLog((await res.json()) as AuditEntry[]);
+    } finally {
+      setAuditLoading(false);
+    }
+  }
+
+  async function handleUpdateProfile(): Promise<string> {
+    setProfileBusy(true);
+    try {
+      const res = await apiFetch("/auth/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          display_name: profileDisplayName.trim(),
+          contact_email: profileEmail.trim(),
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível salvar o perfil."));
+      }
+      const user = payload as AuthUser;
+      setCurrentUser(user);
+      setProfileDisplayName(user.display_name || "");
+      setProfileEmail(user.contact_email || "");
+      return "Perfil atualizado.";
+    } finally {
+      setProfileBusy(false);
+    }
+  }
+
+  async function handleUpdateNotifications(): Promise<string> {
+    setProfileBusy(true);
+    try {
+      const res = await apiFetch("/auth/me/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          notify_email_pending: notifyEmailPending,
+          notify_email_queue: notifyEmailQueue,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível salvar preferências."));
+      }
+      const user = payload as AuthUser;
+      setCurrentUser(user);
+      setNotifyEmailPending(user.notify_email_pending ?? notifyEmailPending);
+      setNotifyEmailQueue(user.notify_email_queue ?? notifyEmailQueue);
+      return "Preferências de notificação salvas.";
+    } finally {
+      setProfileBusy(false);
+    }
   }
 
   function applyAuthSuccess(accessToken: string, user: AuthUser | null) {
@@ -1016,6 +1159,15 @@ export default function HomePage() {
     setCurrentUser(user);
     if (typeof window !== "undefined") {
       window.localStorage.setItem("fin_access_token", accessToken);
+      const viewFromUrl = new URLSearchParams(window.location.search).get("view");
+      if (viewFromUrl === "fila") {
+        setActiveView("fila");
+      } else {
+        setActiveView("inicio");
+        clearPlatformViewQuery();
+      }
+    } else {
+      setActiveView("inicio");
     }
     setLoginPassword("");
     setRegisterPasswordConfirm("");
@@ -1125,13 +1277,13 @@ export default function HomePage() {
         return next;
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar aprovações.");
+      throw e instanceof Error ? e : new Error("Erro ao carregar aprovações.");
     } finally {
       setPendingUsersLoading(false);
     }
   }
 
-  async function approvePendingUser(userId: number) {
+  async function approvePendingUser(userId: number): Promise<string> {
     const sector = approvalSectorByUser[userId] || "financeiro";
     setPendingActionId(userId);
     try {
@@ -1146,14 +1298,13 @@ export default function HomePage() {
       }
       setPendingUsers((prev) => prev.filter((u) => u.id !== userId));
       await loadPendingCount();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao aprovar cadastro.");
+      return "Cadastro aprovado.";
     } finally {
       setPendingActionId(null);
     }
   }
 
-  async function rejectPendingUser(userId: number) {
+  async function rejectPendingUser(userId: number): Promise<string> {
     setPendingActionId(userId);
     try {
       const res = await apiFetch(`/auth/admin/users/${userId}/reject`, { method: "POST" });
@@ -1163,8 +1314,7 @@ export default function HomePage() {
       }
       setPendingUsers((prev) => prev.filter((u) => u.id !== userId));
       await loadPendingCount();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao recusar cadastro.");
+      return "Cadastro recusado.";
     } finally {
       setPendingActionId(null);
     }
@@ -1183,9 +1333,11 @@ export default function HomePage() {
     setAuthError("");
     setRuns([]);
     setDataset(null);
-    setActiveSessionCount(0);
+    setActiveSessions([]);
+    setActiveView("inicio");
     if (typeof window !== "undefined") {
       window.localStorage.removeItem("fin_access_token");
+      clearPlatformViewQuery();
     }
   }
 
@@ -1273,24 +1425,43 @@ export default function HomePage() {
   }
 
   async function loadActiveSessions() {
-    const res = await apiFetch("/auth/sessions");
-    if (!res.ok) return;
-    const data = (await res.json()) as { id: number }[];
-    setActiveSessionCount(data.length);
+    setSessionsLoading(true);
+    try {
+      const res = await apiFetch("/auth/sessions");
+      if (!res.ok) throw new Error("Não foi possível carregar as sessões.");
+      const data = (await res.json()) as UserSession[];
+      setActiveSessions(data);
+    } finally {
+      setSessionsLoading(false);
+    }
   }
 
-  async function handleChangePassword() {
+  async function revokeSession(sessionId: number): Promise<string> {
+    setRevokingSessionId(sessionId);
+    try {
+      const res = await apiFetch(`/auth/sessions/${sessionId}`, { method: "DELETE" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível encerrar a sessão."));
+      }
+      await loadActiveSessions();
+      return payload?.message || "Sessão encerrada.";
+    } finally {
+      setRevokingSessionId(null);
+    }
+  }
+
+  const activeSessionCount = activeSessions.length;
+
+  async function handleChangePassword(): Promise<string> {
     if (!changeCurrentPassword.trim() || !changeNewPassword.trim()) {
-      setPasswordError("Preencha a senha atual e a nova senha.");
-      return;
+      throw new Error("Preencha a senha atual e a nova senha.");
     }
     if (changeNewPassword !== changeNewPasswordConfirm) {
-      setPasswordError("A confirmação da nova senha não confere.");
-      return;
+      throw new Error("A confirmação da nova senha não confere.");
     }
     if (changeNewPassword.length < 6) {
-      setPasswordError("A nova senha deve ter pelo menos 6 caracteres.");
-      return;
+      throw new Error("A nova senha deve ter pelo menos 6 caracteres.");
     }
     setPasswordBusy(true);
     setPasswordError("");
@@ -1311,16 +1482,14 @@ export default function HomePage() {
       setChangeCurrentPassword("");
       setChangeNewPassword("");
       setChangeNewPasswordConfirm("");
-      setPasswordMessage(payload?.message || "Senha alterada com sucesso.");
       await loadActiveSessions();
-    } catch (e) {
-      setPasswordError(e instanceof Error ? e.message : "Erro ao alterar senha.");
+      return payload?.message || "Senha alterada com sucesso.";
     } finally {
       setPasswordBusy(false);
     }
   }
 
-  async function handleLogoutOtherSessions() {
+  async function handleLogoutOtherSessions(): Promise<string> {
     setPasswordBusy(true);
     setPasswordError("");
     setPasswordMessage("");
@@ -1330,20 +1499,17 @@ export default function HomePage() {
       if (!res.ok) {
         throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível encerrar outras sessões."));
       }
-      setPasswordMessage(payload?.message || "Outras sessões encerradas.");
       await loadActiveSessions();
-    } catch (e) {
-      setPasswordError(e instanceof Error ? e.message : "Erro ao encerrar sessões.");
+      return payload?.message || "Outras sessões encerradas.";
     } finally {
       setPasswordBusy(false);
     }
   }
 
-  async function adminGenerateResetLink() {
+  async function adminGenerateResetLink(): Promise<string> {
     const username = adminLookupUsername.trim();
     if (!username) {
-      setAdminError("Informe o usuário para gerar o link.");
-      return;
+      throw new Error("Informe o usuário para gerar o link.");
     }
     setAdminBusy(true);
     setAdminError("");
@@ -1368,9 +1534,7 @@ export default function HomePage() {
       }
       setAdminResetLink(linkPayload.reset_url || "");
       setAdminResetLinkFor(linkPayload.username || user.username);
-      setAdminMessage(`Link gerado para ${linkPayload.username || user.username} (válido por 1 hora).`);
-    } catch (e) {
-      setAdminError(e instanceof Error ? e.message : "Erro ao gerar link.");
+      return `Link gerado para ${linkPayload.username || user.username} (válido por 1 hora).`;
     } finally {
       setAdminBusy(false);
     }
@@ -1465,26 +1629,12 @@ export default function HomePage() {
     if (!res.ok) throw new Error("Erro ao carregar execuções.");
     const data = (await res.json()) as Run[];
     setRuns(data);
-
-    const visible = data.filter((run) => {
-      if (run.automation_key !== bankView) return false;
-      if (selectedAccountId && run.account_id !== selectedAccountId) return false;
-      return true;
-    });
-    if (visible.length > 0) {
-      setSelectedRunId((current) =>
-        visible.some((run) => run.id === current) ? current : visible[0].id,
-      );
-    } else {
-      setSelectedRunId(null);
-    }
   }
 
-  async function createFinanceAccount() {
+  async function createFinanceAccount(): Promise<string> {
     const name = newAccountName.trim();
     if (!name) {
-      setAccountsError("Informe o nome da conta.");
-      return;
+      throw new Error("Informe o nome da conta.");
     }
     setAccountsBusy(true);
     setAccountsError("");
@@ -1500,22 +1650,24 @@ export default function HomePage() {
         throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível criar a conta."));
       }
       setNewAccountName("");
-      setAccountsMessage(`Conta "${payload.name}" criada.`);
       await loadFinanceAccounts({ includeInactive: true });
       if (payload.bank === bankView) {
         setSelectedAccountId(payload.id);
       }
+      return `Conta "${payload.name}" criada.`;
     } catch (e) {
-      setAccountsError(e instanceof Error ? e.message : "Erro ao criar conta.");
       await loadFinanceAccounts({ includeInactive: true }).catch(() => null);
+      throw e;
     } finally {
       setAccountsBusy(false);
     }
   }
 
-  async function reactivateFinanceAccount(accountId: number) {
+  async function reactivateFinanceAccount(accountId: number): Promise<string> {
     const account = financeAccounts.find((item) => item.id === accountId);
-    if (!account) return;
+    if (!account) {
+      throw new Error("Conta não encontrada.");
+    }
     setAccountsBusy(true);
     setAccountsError("");
     setAccountsMessage("");
@@ -1529,20 +1681,18 @@ export default function HomePage() {
       if (!res.ok) {
         throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível reativar a conta."));
       }
-      setAccountsMessage(`Conta "${account.name}" reativada.`);
       await loadFinanceAccounts({ includeInactive: true });
-    } catch (e) {
-      setAccountsError(e instanceof Error ? e.message : "Erro ao reativar conta.");
+      return `Conta "${account.name}" reativada.`;
     } finally {
       setAccountsBusy(false);
     }
   }
 
-  async function deactivateFinanceAccount(accountId: number) {
+  async function deactivateFinanceAccount(accountId: number): Promise<string> {
     const account = financeAccounts.find((item) => item.id === accountId);
-    if (!account) return;
-    const ok = window.confirm(`Desativar a conta "${account.name}"?`);
-    if (!ok) return;
+    if (!account) {
+      throw new Error("Conta não encontrada.");
+    }
     setAccountsBusy(true);
     setAccountsError("");
     setAccountsMessage("");
@@ -1556,10 +1706,8 @@ export default function HomePage() {
       if (!res.ok) {
         throw new Error(parseApiErrorDetail(payload?.detail, "Não foi possível desativar a conta."));
       }
-      setAccountsMessage(`Conta "${account.name}" desativada.`);
       await loadFinanceAccounts({ includeInactive: true });
-    } catch (e) {
-      setAccountsError(e instanceof Error ? e.message : "Erro ao desativar conta.");
+      return `Conta "${account.name}" desativada.`;
     } finally {
       setAccountsBusy(false);
     }
@@ -1590,12 +1738,15 @@ export default function HomePage() {
       const updated = (await res.json()) as StatusRow;
       setDataset((prev) => {
         if (!prev) return prev;
-        return {
+        const next = {
           ...prev,
           statuses: prev.statuses.map((row) => (row.id === rowId ? { ...row, ...updated } : row)),
         };
+        if (selectedRun?.id) {
+          datasetCacheRef.current.set(selectedRun.id, next);
+        }
+        return next;
       });
-      await loadDataset(selectedRun.id, selectedRun.status);
     } catch (e) {
       setStatusEditError(e instanceof Error ? e.message : "Erro ao salvar alteração.");
     } finally {
@@ -1603,22 +1754,108 @@ export default function HomePage() {
     }
   }
 
-  async function loadDataset(runId: number, runStatus?: string) {
+  async function fetchDatasetPage(
+    runId: number,
+    params: {
+      status_offset: number;
+      status_limit: number;
+      match_offset: number;
+      match_limit: number;
+      include_month_counts?: boolean;
+    },
+  ): Promise<RunDataset> {
+    const query = buildRunDatasetQuery(params);
+    const res = await apiFetch(`/runs/${runId}/dataset?${query}`);
+    if (!res.ok) {
+      throw new Error("Dados da conciliação ainda não disponíveis para esta execução.");
+    }
+    return (await res.json()) as RunDataset;
+  }
+
+  async function loadRemainingDatasetPages(runId: number, seed: RunDataset) {
+    if (datasetLoadingMoreRef.current || isRunDatasetComplete(seed)) return;
+    datasetLoadingMoreRef.current = true;
+    setDatasetLoadingMore(true);
+    try {
+      let merged: RunDataset = { ...seed, statuses: [...seed.statuses], matches: [...seed.matches] };
+      const statusesTotal = merged.statuses_total ?? merged.statuses.length;
+      const matchesTotal = merged.matches_total ?? merged.matches.length;
+
+      while (merged.statuses.length < statusesTotal) {
+        const chunk = await fetchDatasetPage(runId, {
+          status_offset: merged.statuses.length,
+          status_limit: DATASET_STATUS_PAGE,
+          match_offset: 0,
+          match_limit: 0,
+          include_month_counts: false,
+        });
+        merged = mergeRunDatasetChunk(merged, chunk);
+        datasetCacheRef.current.set(runId, merged);
+        if (selectedRunIdRef.current === runId) {
+          setDataset({ ...merged });
+        }
+      }
+
+      while (merged.matches.length < matchesTotal) {
+        const chunk = await fetchDatasetPage(runId, {
+          status_offset: 0,
+          status_limit: 0,
+          match_offset: merged.matches.length,
+          match_limit: DATASET_MATCH_PAGE,
+          include_month_counts: false,
+        });
+        merged = mergeRunDatasetChunk(merged, chunk);
+        datasetCacheRef.current.set(runId, merged);
+        if (selectedRunIdRef.current === runId) {
+          setDataset({ ...merged });
+        }
+      }
+    } catch {
+      // Mantém o que já foi carregado; usuário ainda vê a primeira página.
+    } finally {
+      datasetLoadingMoreRef.current = false;
+      setDatasetLoadingMore(false);
+    }
+  }
+
+  async function loadDataset(runId: number, runStatus?: string, options?: { force?: boolean }) {
+    const runningOrQueued = ["running", "queued"].includes((runStatus || "").toLowerCase());
+    const cached = datasetCacheRef.current.get(runId);
+    if (!options?.force && !runningOrQueued && cached && isRunDatasetComplete(cached)) {
+      setDataset(cached);
+      return;
+    }
+    if (!options?.force && datasetLoadingMoreRef.current) {
+      return;
+    }
+
     try {
       setDatasetError("");
-      const res = await apiFetch(`/runs/${runId}/dataset`);
-      if (!res.ok) {
-        const runningOrQueued = ["running", "queued"].includes((runStatus || "").toLowerCase());
-        if (runningOrQueued) {
-          setDataset(null);
-          return;
-        }
-        throw new Error("Dados da conciliação ainda não disponíveis para esta execução.");
+      if (cached) {
+        setDataset(cached);
       }
-      const data = await res.json();
-      setDataset(data);
+
+      const firstPage = await fetchDatasetPage(runId, {
+        status_offset: 0,
+        status_limit: DATASET_STATUS_PAGE,
+        match_offset: 0,
+        match_limit: DATASET_MATCH_PAGE,
+        include_month_counts: true,
+      });
+      datasetCacheRef.current.set(runId, firstPage);
+      setDataset(firstPage);
+
+      if (!isRunDatasetComplete(firstPage)) {
+        void loadRemainingDatasetPages(runId, firstPage);
+      }
     } catch (e) {
-      setDataset(null);
+      if (runningOrQueued) {
+        if (!cached) setDataset(null);
+        return;
+      }
+      if (!datasetCacheRef.current.has(runId)) {
+        setDataset(null);
+      }
       setDatasetError(e instanceof Error ? e.message : "Erro ao carregar dataset.");
     }
   }
@@ -1745,35 +1982,73 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const token = window.localStorage.getItem("fin_access_token");
-      if (token) setAuthToken(token);
-      const params = new URLSearchParams(window.location.search);
-      const resetFromUrl = params.get("reset");
-      const viewFromUrl = params.get("view");
-      if (resetFromUrl) {
-        setResetToken(resetFromUrl);
-        setGuestView("reset");
-        window.history.replaceState({}, "", window.location.pathname);
-      } else if (viewFromUrl === "fila" || viewFromUrl === "configuracoes") {
-        setActiveView(viewFromUrl);
-        window.history.replaceState({}, "", window.location.pathname);
+    let cancelled = false;
+
+    async function bootstrapSession() {
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const resetFromUrl = params.get("reset");
+        const viewFromUrl = params.get("view");
+        if (resetFromUrl) {
+          setResetToken(resetFromUrl);
+          setGuestView("reset");
+          window.history.replaceState({}, "", window.location.pathname);
+        } else if (viewFromUrl === "fila") {
+          setActiveView("fila");
+        } else if (viewFromUrl === "configuracoes") {
+          setActiveView("configuracoes");
+          const tabFromUrl = settingsTabFromSlug(params.get("tab"));
+          if (tabFromUrl) setSettingsTab(tabFromUrl);
+        }
+
+        const token = window.localStorage.getItem("fin_access_token");
+        if (token) {
+          setAuthToken(token);
+          try {
+            const res = await fetch(`${API_BASE}/auth/me`, {
+              headers: { Authorization: `Bearer ${token}` },
+              cache: "no-store",
+            });
+            if (res.ok) {
+              const data = (await res.json()) as AuthUser;
+              if (!cancelled) {
+                setCurrentUser(data);
+                setProfileDisplayName(data.display_name || "");
+                setProfileEmail(data.contact_email || "");
+                setNotifyEmailPending(data.notify_email_pending ?? true);
+                setNotifyEmailQueue(data.notify_email_queue ?? false);
+              }
+            } else {
+              window.localStorage.removeItem("fin_access_token");
+              if (!cancelled) {
+                setAuthToken(null);
+                setCurrentUser(null);
+              }
+            }
+          } catch {
+            window.localStorage.removeItem("fin_access_token");
+            if (!cancelled) {
+              setAuthToken(null);
+              setCurrentUser(null);
+            }
+          }
+        }
       }
+
+      if (!cancelled) setAuthReady(true);
     }
-    setAuthReady(true);
+
+    bootstrapSession().catch(() => {
+      if (!cancelled) setAuthReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
-    if (!authToken || currentUser?.role !== "admin") return;
-    loadPendingCount().catch(() => null);
-    const timer = window.setInterval(() => {
-      loadPendingCount().catch(() => null);
-    }, 60000);
-    return () => window.clearInterval(timer);
-  }, [authToken, currentUser?.role]);
-
-  useEffect(() => {
-    if (!authToken) return;
+    if (!authReady || !authToken || currentUser) return;
     loadCurrentUser().catch(() => {
       setAuthToken(null);
       setCurrentUser(null);
@@ -1781,15 +2056,24 @@ export default function HomePage() {
         window.localStorage.removeItem("fin_access_token");
       }
     });
-  }, [authToken]);
+  }, [authReady, authToken, currentUser]);
 
   useEffect(() => {
-    if (!authToken) return;
+    if (!authReady || !authToken || currentUser?.role !== "admin") return;
+    loadPendingCount().catch(() => null);
+    const timer = window.setInterval(() => {
+      loadPendingCount().catch(() => null);
+    }, 60000);
+    return () => window.clearInterval(timer);
+  }, [authReady, authToken, currentUser?.role]);
+
+  useEffect(() => {
+    if (!authReady || !authToken) return;
     loadAutomations().catch(() => setError("Erro ao carregar automações."));
     loadFinanceAccounts().catch(() => {
       setError("Erro ao carregar contas bancárias. Reinicie o backend e atualize a página.");
     });
-  }, [authToken]);
+  }, [authReady, authToken]);
 
   useEffect(() => {
     if (!authToken || activeView !== "financeiro") return;
@@ -1816,11 +2100,21 @@ export default function HomePage() {
       isSelectedRunActive ? FAST_POLL_MS : DEFAULT_POLL_MS,
     );
     return () => clearInterval(timer);
-  }, [authToken, bankView, selectedAccountId, isSelectedRunActive]);
+  }, [authToken, isSelectedRunActive]);
+
+  useEffect(() => {
+    selectedRunIdRef.current = selectedRun?.id ?? null;
+  }, [selectedRun?.id]);
 
   useEffect(() => {
     if (!authToken) return;
     if (selectedRun?.id) {
+      const cached = datasetCacheRef.current.get(selectedRun.id);
+      if (cached) {
+        setDataset(cached);
+      } else {
+        setDataset(null);
+      }
       loadDataset(selectedRun.id, selectedRun.status).catch(() => null);
     } else {
       setDataset(null);
@@ -1831,7 +2125,11 @@ export default function HomePage() {
     if (!authToken) return;
     if (!selectedRun?.id) return;
     const timer = setInterval(() => {
-      loadDataset(selectedRun.id, selectedRun.status).catch(() => null);
+      const cached = datasetCacheRef.current.get(selectedRun.id);
+      const running = ["running", "queued"].includes((selectedRun.status || "").toLowerCase());
+      if (running || !cached || !isRunDatasetComplete(cached)) {
+        loadDataset(selectedRun.id, selectedRun.status).catch(() => null);
+      }
     }, isSelectedRunActive ? FAST_POLL_MS : DEFAULT_POLL_MS);
     return () => clearInterval(timer);
   }, [isSelectedRunActive, selectedRun?.id, selectedRun?.status]);
@@ -1879,6 +2177,8 @@ export default function HomePage() {
     setSelectedMonthKey("todos");
     setFilterField("geral");
     setFilterValue("");
+    planilhaScrollRef.current?.scrollTo(0, 0);
+    matchesScrollRef.current?.scrollTo(0, 0);
   }, [selectedRun?.id, bankView]);
 
   useEffect(() => {
@@ -1888,30 +2188,53 @@ export default function HomePage() {
     setAdminError("");
     setAdminMessage("");
     loadActiveSessions().catch(() => null);
+    loadAppInfo().catch(() => null);
     if (currentUser?.role === "admin") {
       loadPendingUsers().catch(() => null);
       loadPendingCount().catch(() => null);
       loadFinanceAccounts({ includeInactive: true }).catch(() => null);
+      loadActiveUsers().catch(() => null);
+      loadAuditLog().catch(() => null);
     }
   }, [activeView, currentUser?.role]);
 
   useEffect(() => {
-    const panel = document.querySelector(".platform-dashboard");
-    const timer = window.setTimeout(() => {
-      panel?.scrollTo({ top: 0, behavior: "smooth" });
-    }, 420);
-    return () => window.clearTimeout(timer);
+    if (!authToken) return;
+    syncActiveViewUrl(activeView, settingsTab);
+  }, [activeView, settingsTab, authToken]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const params = new URLSearchParams(window.location.search);
+      const view = params.get("view");
+      if (view === "configuracoes") {
+        setActiveView("configuracoes");
+        const tab = readSettingsTabFromLocation();
+        if (tab) setSettingsTab(tab);
+      } else if (view === "fila") {
+        setActiveView("fila");
+      } else {
+        setActiveView("inicio");
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  useEffect(() => {
+    const scrollTop = { top: 0, behavior: "instant" as ScrollBehavior };
+    document.querySelector(".platform-dashboard")?.scrollTo(scrollTop);
+    document.querySelector(".platform-view-pane")?.scrollTo(scrollTop);
   }, [activeView]);
 
   useEffect(() => {
-    const useConfigBg = Boolean(authToken) && activeView === "configuracoes";
-    document.documentElement.setAttribute("data-kivo-bg", useConfigBg ? "config" : "degrade");
+    document.documentElement.setAttribute("data-kivo-bg", authToken ? "ambient" : "degrade");
     if (authToken) {
       document.documentElement.setAttribute("data-kivo-layout", "fullscreen");
     } else {
       document.documentElement.removeAttribute("data-kivo-layout");
     }
-  }, [authToken, activeView]);
+  }, [authToken]);
 
   const pageHeading = useMemo(
     () => resolvePlatformHeading(activeView, analysisView, bankView, operationsView, rhView),
@@ -2426,453 +2749,112 @@ export default function HomePage() {
               <span className="platform-tag">{pageHeading.tag}</span>
             </header>
 
-            <div key={activeView} className={`platform-view-pane platform-view-pane--${activeView}`}>
+            <div key={`view-${activeView}`} className={`platform-view-pane platform-view-pane--${activeView}`}>
         {activeView === "inicio" ? (
-          <section className="platform-home" aria-label="Página inicial">
-            <div className="platform-home-hero">
-              <div className="platform-home-hero-copy">
-                <p className="platform-home-eyebrow">Olá, {currentUser.username}</p>
-                <h2 className="platform-home-title">
-                  Bem-vindo ao{" "}
-                  <span className="platform-home-brand">
-                    KIV<span className="platform-home-brand-o">O</span>
-                  </span>
-                </h2>
-                <p className="platform-home-lead">
-                  Escolha um setor para começar. Use a navegação inferior para trocar de módulo.
-                </p>
-              </div>
-              <div className="platform-home-hero-mascot" aria-hidden="true">
-                <div className="platform-home-hero-mascot-glow" />
-                <KivoRobot mood="idle" className="platform-home-hero-robot" title="Assistente KIVO" />
-              </div>
-            </div>
-
-            <div className="platform-home-modules-head">
-              <h3 className="platform-home-modules-title">Seus módulos</h3>
-              <span className="platform-home-modules-count">
-                {visibleSectors.length} {visibleSectors.length === 1 ? "setor" : "setores"}
-              </span>
-            </div>
-
-            <div className="platform-home-modules">
-              {visibleSectors.map((sector) => (
-                <button
-                  key={sector.key}
-                  type="button"
-                  className={`platform-home-module platform-home-module--${sector.key}`}
-                  onClick={() => setActiveView(sector.key)}
-                >
-                  <span className="platform-home-module-icon" aria-hidden="true">
-                    <SectorRailIcon sector={sector.key} />
-                  </span>
-                  <span className="platform-home-module-body">
-                    <strong>{sector.label}</strong>
-                    <span className="platform-home-module-desc">{sector.subtitle}</span>
-                  </span>
-                  <span className="platform-home-module-arrow" aria-hidden="true">
-                    →
-                  </span>
-                </button>
-              ))}
-              <button
-                type="button"
-                className="platform-home-module platform-home-module--fila"
-                onClick={() => setActiveView("fila")}
-              >
-                <span className="platform-home-module-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-                    <path d="M5 6h14v12H5z" />
-                    <path d="M8 10h8M8 14h5" />
-                    <path d="M9 6V4h6v2" />
-                  </svg>
-                </span>
-                <span className="platform-home-module-body">
-                  <strong>{FILA_NAV.label}</strong>
-                  <span className="platform-home-module-desc">{FILA_NAV.subtitle}</span>
-                </span>
-                <span className="platform-home-module-arrow" aria-hidden="true">
-                  →
-                </span>
-              </button>
-            </div>
-
-            <p className="platform-home-assistant-hint">
-              <KivoRobot mood="peek" className="platform-home-hint-robot" />
-              Dúvidas? Clique no robô escondido atrás do painel — ele sai, abre o chat e, ao enviar mensagem, fica
-              andando pensando.
-            </p>
-          </section>
+          <HomeDashboard
+            username={currentUser.username}
+            sectors={visibleSectors}
+            filaLabel={FILA_NAV.label}
+            filaSubtitle={FILA_NAV.subtitle}
+            totals={totals}
+            recentRuns={recentRuns}
+            onSelectSector={setActiveView}
+            onSelectFila={() => setActiveView("fila")}
+          />
         ) : activeView === "configuracoes" ? (
-          <section className="panel platform-settings">
-            {currentUser.role === "admin" && pendingCount > 0 && (
-              <div className="platform-settings-alert" role="status">
-                <strong>
-                  {pendingCount} cadastro{pendingCount === 1 ? "" : "s"} aguardando aprovação
-                </strong>
-                <span>Revise na seção Administração abaixo.</span>
-              </div>
-            )}
-            <div className="platform-settings-grid">
-              <article className="platform-settings-card">
-                <span className="platform-settings-label">Usuário</span>
-                <strong>{currentUser.username}</strong>
-              </article>
-              <article className="platform-settings-card">
-                <span className="platform-settings-label">Perfil</span>
-                <strong>{roleLabel(currentUser.role)}</strong>
-              </article>
-              <article className="platform-settings-card">
-                <span className="platform-settings-label">Setor</span>
-                <strong>{sectorLabel(currentUser.sector)}</strong>
-              </article>
-              <article className="platform-settings-card">
-                <span className="platform-settings-label">Sessões</span>
-                <strong>
-                  {activeSessionCount > 0
-                    ? `${activeSessionCount} ativa${activeSessionCount === 1 ? "" : "s"}`
-                    : "—"}
-                </strong>
-              </article>
-              <article className="platform-settings-card platform-settings-card--wide">
-                <span className="platform-settings-label">API conectada</span>
-                <strong className="platform-settings-mono">{API_BASE}</strong>
-              </article>
-            </div>
-
-            <div className="platform-settings-stack">
-              <section className="platform-settings-block">
-                <header className="platform-settings-block-head">
-                  <h3>Segurança da conta</h3>
-                  <p className="platform-settings-block-desc">
-                    {activeSessionCount > 1
-                      ? `${activeSessionCount} sessões abertas — alterar a senha mantém apenas esta.`
-                      : "Atualize sua senha quando necessário."}
-                  </p>
-                </header>
-                <div className="platform-settings-security-form">
-                  <label className="platform-settings-field">
-                    <span className="platform-settings-field-label">Senha atual</span>
-                    <AuthPasswordField
-                      id="settings-current-password"
-                      placeholder="Digite a senha atual"
-                      value={changeCurrentPassword}
-                      visible={showAuthPassword}
-                      onToggleVisible={() => setShowAuthPassword((prev) => !prev)}
-                      autoComplete="current-password"
-                      onChange={setChangeCurrentPassword}
-                    />
-                  </label>
-                  <label className="platform-settings-field">
-                    <span className="platform-settings-field-label">Nova senha</span>
-                    <AuthPasswordField
-                      id="settings-new-password"
-                      placeholder="Mínimo 6 caracteres"
-                      value={changeNewPassword}
-                      visible={showNewPassword}
-                      onToggleVisible={() => setShowNewPassword((prev) => !prev)}
-                      autoComplete="new-password"
-                      onChange={setChangeNewPassword}
-                    />
-                  </label>
-                  <label className="platform-settings-field">
-                    <span className="platform-settings-field-label">Confirmar nova senha</span>
-                    <AuthPasswordField
-                      id="settings-new-password-confirm"
-                      placeholder="Repita a nova senha"
-                      value={changeNewPasswordConfirm}
-                      visible={showNewPasswordConfirm}
-                      onToggleVisible={() => setShowNewPasswordConfirm((prev) => !prev)}
-                      autoComplete="new-password"
-                      onChange={setChangeNewPasswordConfirm}
-                    />
-                  </label>
-                </div>
-                <div className="platform-settings-block-actions">
-                  <button
-                    type="button"
-                    className="platform-settings-approve-btn"
-                    disabled={passwordBusy}
-                    onClick={() => handleChangePassword().catch(() => null)}
-                  >
-                    {passwordBusy ? "Salvando…" : "Alterar senha"}
-                  </button>
-                  {activeSessionCount > 1 && (
-                    <button
-                      type="button"
-                      className="btn-secondary"
-                      disabled={passwordBusy}
-                      onClick={() => handleLogoutOtherSessions().catch(() => null)}
-                    >
-                      Encerrar outras sessões
-                    </button>
-                  )}
-                </div>
-                {passwordError && (
-                  <p className="platform-settings-feedback platform-settings-feedback--error">{passwordError}</p>
-                )}
-                {passwordMessage && (
-                  <p className="platform-settings-feedback platform-settings-feedback--ok">{passwordMessage}</p>
-                )}
-              </section>
-
-              {currentUser.role === "admin" && (
-                <section className="platform-settings-block platform-settings-block--admin">
-                  <header className="platform-settings-block-head">
-                    <h3>Administração</h3>
-                    <p className="platform-settings-block-desc">
-                      Aprovação de cadastros e links de redefinição de senha.
-                    </p>
-                  </header>
-
-                  <div className="platform-settings-admin-panel">
-                    <div className="platform-settings-admin-section">
-                      <h4>Contas bancárias</h4>
-                      <p className="platform-settings-block-desc">
-                        Cadastre quantas contas precisar por banco (Master 1, Master 2, Administrativo, etc.).
-                      </p>
-                      <div className="platform-settings-admin-reset-row platform-settings-add-account-row">
-                        <label className="platform-settings-field platform-settings-admin-reset-input">
-                          <span className="platform-settings-field-label">Banco</span>
-                          <select
-                            className="platform-settings-select"
-                            value={newAccountBank}
-                            onChange={(e) => setNewAccountBank(e.target.value as BankKey)}
-                          >
-                            <option value="bb">Banco do Brasil</option>
-                            <option value="itau_sigra">Itaú / SIGRA</option>
-                          </select>
-                        </label>
-                        <label className="platform-settings-field platform-settings-admin-reset-input">
-                          <span className="platform-settings-field-label">Nome da conta</span>
-                          <input
-                            type="text"
-                            placeholder="Ex.: Master 1"
-                            value={newAccountName}
-                            onChange={(e) => setNewAccountName(e.target.value)}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className="platform-settings-approve-btn platform-settings-generate-link"
-                          disabled={accountsBusy}
-                          onClick={() => createFinanceAccount().catch(() => null)}
-                        >
-                          {accountsBusy ? "Salvando…" : "Adicionar conta"}
-                        </button>
-                      </div>
-                      <div className="platform-settings-accounts-scroll">
-                      <ul className="platform-settings-accounts-list">
-                        {financeAccounts.length === 0 && (
-                          <li className="platform-settings-empty muted">
-                            Nenhuma conta cadastrada ainda.
-                          </li>
-                        )}
-                        {financeAccounts.map((account) => (
-                          <li key={account.id} className="platform-settings-account-item">
-                            <div>
-                              <strong>{account.name}</strong>
-                              <span>
-                                {account.bank === "bb" ? "BB" : "Itaú"} · {account.slug}
-                                {Number(account.is_active) !== 1 ? " · inativa" : " · ativa"}
-                              </span>
-                            </div>
-                            {Number(account.is_active) === 1 ? (
-                              <button
-                                type="button"
-                                className="btn-secondary platform-settings-reject-btn"
-                                disabled={accountsBusy}
-                                onClick={() => deactivateFinanceAccount(account.id).catch(() => null)}
-                              >
-                                Desativar
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                className="platform-settings-approve-btn"
-                                disabled={accountsBusy}
-                                onClick={() => reactivateFinanceAccount(account.id).catch(() => null)}
-                              >
-                                Reativar
-                              </button>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                      </div>
-                      {accountsError && (
-                        <p className="platform-settings-feedback platform-settings-feedback--error">
-                          {accountsError}
-                        </p>
-                      )}
-                      {accountsMessage && (
-                        <p className="platform-settings-feedback platform-settings-feedback--ok">
-                          {accountsMessage}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="platform-settings-admin-section">
-                      <div className="platform-settings-approvals-head">
-                        <h4>Cadastros pendentes</h4>
-                        <button
-                          type="button"
-                          className="btn-secondary platform-settings-refresh"
-                          disabled={pendingUsersLoading}
-                          onClick={() => loadPendingUsers().catch(() => null)}
-                        >
-                          {pendingUsersLoading ? "Atualizando…" : "Atualizar"}
-                        </button>
-                      </div>
-                      {pendingUsers.length === 0 ? (
-                        <p className="platform-settings-empty muted">Nenhuma solicitação pendente.</p>
-                      ) : (
-                        <ul className="platform-settings-pending-list">
-                          {pendingUsers.map((user) => (
-                            <li key={user.id} className="platform-settings-pending-item">
-                              <div className="platform-settings-pending-meta">
-                                <strong>{user.username}</strong>
-                                <span>
-                                  {sectorLabel(user.requested_sector)} ·{" "}
-                                  {new Date(user.created_at).toLocaleString("pt-BR")}
-                                </span>
-                              </div>
-                              <div className="platform-settings-pending-actions">
-                                <label className="platform-settings-pending-sector">
-                                  <span>Setor liberado</span>
-                                  <select
-                                    className="platform-settings-select platform-settings-sector-select"
-                                    value={approvalSectorByUser[user.id] || user.requested_sector}
-                                    onChange={(e) =>
-                                      setApprovalSectorByUser((prev) => ({
-                                        ...prev,
-                                        [user.id]: e.target.value as SectorKey,
-                                      }))
-                                    }
-                                    disabled={pendingActionId === user.id}
-                                  >
-                                    {SECTOR_MENU.map((sector) => (
-                                      <option key={sector.key} value={sector.key}>
-                                        {sector.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <button
-                                  type="button"
-                                  className="platform-settings-approve-btn"
-                                  disabled={pendingActionId === user.id}
-                                  onClick={() => approvePendingUser(user.id).catch(() => null)}
-                                >
-                                  Aprovar
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn-secondary platform-settings-reject-btn"
-                                  disabled={pendingActionId === user.id}
-                                  onClick={() => rejectPendingUser(user.id).catch(() => null)}
-                                >
-                                  Recusar
-                                </button>
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-
-                    <div className="platform-settings-admin-section">
-                      <h4>Link de redefinição</h4>
-                      <p className="platform-settings-block-desc">
-                        Válido por 1 hora — envie ao usuário por canal interno.
-                      </p>
-                      <div className="platform-settings-admin-reset-row">
-                        <label className="platform-settings-field platform-settings-admin-reset-input">
-                          <span className="platform-settings-field-label">Usuário</span>
-                          <input
-                            type="text"
-                            placeholder="Nome de login"
-                            value={adminLookupUsername}
-                            onChange={(e) => setAdminLookupUsername(e.target.value)}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          className="btn-secondary platform-settings-generate-link"
-                          disabled={adminBusy}
-                          onClick={() => adminGenerateResetLink().catch(() => null)}
-                        >
-                          {adminBusy ? "Gerando…" : "Gerar link"}
-                        </button>
-                      </div>
-                      {adminResetLink && (
-                        <div className="platform-settings-reset-link-box">
-                          <span className="platform-settings-label">{adminResetLinkFor}</span>
-                          <a href={adminResetLink} className="platform-settings-reset-link-url">
-                            {adminResetLink}
-                          </a>
-                        </div>
-                      )}
-                      {adminError && (
-                        <p className="platform-settings-feedback platform-settings-feedback--error">{adminError}</p>
-                      )}
-                      {adminMessage && (
-                        <p className="platform-settings-feedback platform-settings-feedback--ok">{adminMessage}</p>
-                      )}
-                    </div>
-
-                    <AutomationClientAccessPanel apiFetch={apiFetch} />
-                  </div>
-                </section>
-              )}
-            </div>
-
-            <footer className="platform-settings-footer">
-              <button type="button" className="btn-secondary" onClick={() => handleLogout().catch(() => null)}>
-                Sair da conta
-              </button>
-            </footer>
-          </section>
+          <SettingsPanel
+            username={currentUser.username}
+            roleLabel={roleLabel(currentUser.role)}
+            sectorLabel={sectorLabel(currentUser.sector)}
+            isAdmin={currentUser.role === "admin"}
+            apiBase={API_BASE}
+            activeSessionCount={activeSessionCount}
+            sessions={activeSessions}
+            sessionsLoading={sessionsLoading}
+            revokingSessionId={revokingSessionId}
+            onRevokeSession={revokeSession}
+            tab={settingsTab}
+            onTabChange={setSettingsTab}
+            pendingCount={pendingCount}
+            sectorMenu={SECTOR_MENU}
+            sectorLabelFn={sectorLabel}
+            apiFetch={apiFetch}
+            profile={{
+              displayName: profileDisplayName,
+              contactEmail: profileEmail,
+              createdAt: currentUser.created_at,
+              busy: profileBusy,
+              appInfo,
+              notifyEmailPending,
+              notifyEmailQueue,
+              onDisplayNameChange: setProfileDisplayName,
+              onContactEmailChange: setProfileEmail,
+              onNotifyEmailPendingChange: setNotifyEmailPending,
+              onNotifyEmailQueueChange: setNotifyEmailQueue,
+              onSaveProfile: handleUpdateProfile,
+              onSaveNotifications: handleUpdateNotifications,
+            }}
+            password={{
+              current: changeCurrentPassword,
+              next: changeNewPassword,
+              confirm: changeNewPasswordConfirm,
+              busy: passwordBusy,
+              showCurrent: showAuthPassword,
+              showNext: showNewPassword,
+              showConfirm: showNewPasswordConfirm,
+              onCurrentChange: setChangeCurrentPassword,
+              onNextChange: setChangeNewPassword,
+              onConfirmChange: setChangeNewPasswordConfirm,
+              onToggleCurrent: () => setShowAuthPassword((prev) => !prev),
+              onToggleNext: () => setShowNewPassword((prev) => !prev),
+              onToggleConfirm: () => setShowNewPasswordConfirm((prev) => !prev),
+              onSubmit: handleChangePassword,
+              onLogoutOthers: handleLogoutOtherSessions,
+            }}
+            admin={{
+              accounts: financeAccounts,
+              accountsBusy,
+              newBank: newAccountBank,
+              newName: newAccountName,
+              onNewBankChange: setNewAccountBank,
+              onNewNameChange: setNewAccountName,
+              onCreateAccount: createFinanceAccount,
+              onDeactivateAccount: deactivateFinanceAccount,
+              onReactivateAccount: reactivateFinanceAccount,
+              pendingUsers,
+              pendingLoading: pendingUsersLoading,
+              pendingActionId,
+              approvalSectorByUser,
+              onApprovalSectorChange: (userId, sector) =>
+                setApprovalSectorByUser((prev) => ({ ...prev, [userId]: sector })),
+              onRefreshPending: loadPendingUsers,
+              onApproveUser: approvePendingUser,
+              onRejectUser: rejectPendingUser,
+              lookupUsername: adminLookupUsername,
+              onLookupUsernameChange: setAdminLookupUsername,
+              resetLink: adminResetLink,
+              resetLinkFor: adminResetLinkFor,
+              busy: adminBusy,
+              onGenerateResetLink: adminGenerateResetLink,
+              activeUsers,
+              activeUsersLoading,
+              userSearch: adminUserSearch,
+              onUserSearchChange: setAdminUserSearch,
+              onRefreshUsers: () => loadActiveUsers(adminUserSearch),
+              auditLog,
+              auditLoading,
+              onRefreshAudit: loadAuditLog,
+            }}
+            onLogout={handleLogout}
+          />
         ) : activeView === "operacoes" ? (
-          <section className="platform-operacoes" aria-label="Painel de operações">
-            <header className="platform-operacoes-page-head">
-              <div className="platform-operacoes-page-head-text">
-                <h2>Comex</h2>
-                <p>Automações por equipe e cliente</p>
-              </div>
-              <div
-                className="platform-operacoes-flows platform-operacoes-flows--compact"
-                role="tablist"
-                aria-label="Equipes"
-              >
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={operationsView === "importacao"}
-                  className={`platform-operacoes-flow-tab ${operationsView === "importacao" ? "active" : ""}`}
-                  onClick={() => setOperationsView("importacao")}
-                >
-                  Importação
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={operationsView === "exportacao"}
-                  className={`platform-operacoes-flow-tab ${operationsView === "exportacao" ? "active" : ""}`}
-                  onClick={() => setOperationsView("exportacao")}
-                >
-                  Exportação
-                </button>
-              </div>
-            </header>
-
-            <OperacoesPanel
-              apiFetch={apiFetch}
-              operationsView={operationsView}
-              username={currentUser.username}
-              isAdmin={currentUser.role === "admin"}
-            />
-          </section>
+          <OperacoesPanel
+            apiFetch={apiFetch}
+            operationsView={operationsView}
+            onOperationsViewChange={setOperationsView}
+            username={currentUser.username}
+            isAdmin={currentUser.role === "admin"}
+          />
         ) : activeView === "rh" ? (
           authToken ? <RhModule apiBase={API_BASE} authToken={authToken} /> : null
         ) : activeView === "pedro" ? (
@@ -2923,14 +2905,16 @@ export default function HomePage() {
               <button
                 type="button"
                 className={`tab-btn ${bankView === "bb" ? "active" : ""}`}
-                onClick={() => setBankView("bb")}
+                disabled={isBankSwitchPending}
+                onClick={() => startBankSwitch(() => setBankView("bb"))}
               >
                 BB ({runCountsByBank.bb})
               </button>
               <button
                 type="button"
                 className={`tab-btn ${bankView === "itau_sigra" ? "active" : ""}`}
-                onClick={() => setBankView("itau_sigra")}
+                disabled={isBankSwitchPending}
+                onClick={() => startBankSwitch(() => setBankView("itau_sigra"))}
               >
                 Itaú / SIGRA ({runCountsByBank.itau_sigra})
               </button>
@@ -3148,7 +3132,7 @@ export default function HomePage() {
             className={`tab-btn ${analysisView === "matches" ? "active" : ""}`}
             onClick={() => setAnalysisView("matches")}
           >
-            Conciliações ({allMatches.length})
+            Conciliações ({dataset?.matches_total ?? allMatches.length})
           </button>
           <button
             type="button"
@@ -3245,10 +3229,15 @@ export default function HomePage() {
                   />
                 </div>
                 <p className="finance-inline-hint">
-                  {sortedStatuses.length} linha(s) · edite na tabela; salva automaticamente.
+                  {sortedStatuses.length} linha(s) exibida(s)
+                  {dataset.statuses_total && dataset.statuses_total > dataset.statuses.length
+                    ? ` · carregadas ${dataset.statuses.length} de ${dataset.statuses_total}`
+                    : ""}
+                  {datasetLoadingMore ? " · carregando mais em segundo plano…" : ""}
+                  {" · edite na tabela; salva automaticamente."}
                 </p>
                 {statusEditError && <p className="error">{statusEditError}</p>}
-                <div className="table-wrapper table-wrapper--scroll planilha-table-scroll">
+                <div className="table-wrapper table-wrapper--scroll planilha-table-scroll" ref={planilhaScrollRef}>
                   <table className="conciliacao-edit-table">
                     <thead>
                       <tr>
@@ -3277,7 +3266,16 @@ export default function HomePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedStatuses.map((s, idx) => {
+                      {planilhaVirtual.topSpacerHeight > 0 && (
+                        <tr className="conciliacao-virtual-spacer" aria-hidden="true">
+                          <td
+                            colSpan={planilhaColSpan}
+                            style={{ height: planilhaVirtual.topSpacerHeight, padding: 0, border: 0 }}
+                          />
+                        </tr>
+                      )}
+                      {visibleStatuses.map((s, idx) => {
+                        const rowIndex = planilhaVirtual.startIndex + idx;
                         const direcao = inferDirecaoMovimento(s);
                         const rowBusy = Boolean(statusRowSaving[s.id]);
                         const canEdit = Boolean(s.id) && !isSelectedRunActive;
@@ -3286,8 +3284,8 @@ export default function HomePage() {
                           <tr
                             key={
                               s.id
-                                ? `status-${s.id}-${s.data}-${s.valor_extrato}-${s.status}-${s.direcao_movimento ?? ""}-${s.observacao}-${s.favorecido_descricao}`
-                                : `${s.sheet_name}-${s.extrato_id}-${s.aba_extrato ?? ""}-${idx}`
+                                ? `status-${s.id}-${rowIndex}`
+                                : `${s.sheet_name}-${s.extrato_id}-${s.aba_extrato ?? ""}-${rowIndex}`
                             }
                             className={rowBusy ? "conciliacao-row-saving" : undefined}
                           >
@@ -3406,9 +3404,17 @@ export default function HomePage() {
                           </tr>
                         );
                       })}
+                      {planilhaVirtual.bottomSpacerHeight > 0 && (
+                        <tr className="conciliacao-virtual-spacer" aria-hidden="true">
+                          <td
+                            colSpan={planilhaColSpan}
+                            style={{ height: planilhaVirtual.bottomSpacerHeight, padding: 0, border: 0 }}
+                          />
+                        </tr>
+                      )}
                       {sortedStatuses.length === 0 && (
                         <tr>
-                          <td colSpan={bankView === "bb" ? 10 : 9}>Sem linhas para os filtros selecionados.</td>
+                          <td colSpan={planilhaColSpan}>Sem linhas para os filtros selecionados.</td>
                         </tr>
                       )}
                     </tbody>
@@ -3448,7 +3454,7 @@ export default function HomePage() {
                 <p className="finance-inline-hint">
                   {sortedMatches.length} de {allMatches.length} linha(s) conciliada(s)
                 </p>
-                <div className="table-wrapper table-wrapper--scroll planilha-table-scroll">
+                <div className="table-wrapper table-wrapper--scroll planilha-table-scroll" ref={matchesScrollRef}>
                   <table>
                     <thead>
                       <tr>
@@ -3478,10 +3484,16 @@ export default function HomePage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {sortedMatches.map((m, idx) => {
+                      {matchesVirtual.topSpacerHeight > 0 && (
+                        <tr className="conciliacao-virtual-spacer" aria-hidden="true">
+                          <td colSpan={10} style={{ height: matchesVirtual.topSpacerHeight, padding: 0, border: 0 }} />
+                        </tr>
+                      )}
+                      {visibleMatches.map((m, idx) => {
+                        const rowIndex = matchesVirtual.startIndex + idx;
                         const sigraProcessIds = parseSigraProcessIds(m.ref_sigra);
                         return (
-                        <tr key={`${m.extrato_id}-${m.comprovante_id}-${idx}`}>
+                        <tr key={`${m.extrato_id}-${m.comprovante_id}-${rowIndex}`}>
                           <td>{m.extrato_id}</td>
                           <td>{m.data_extrato}</td>
                           <td>{m.valor_extrato.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
@@ -3513,6 +3525,11 @@ export default function HomePage() {
                         </tr>
                         );
                       })}
+                      {matchesVirtual.bottomSpacerHeight > 0 && (
+                        <tr className="conciliacao-virtual-spacer" aria-hidden="true">
+                          <td colSpan={10} style={{ height: matchesVirtual.bottomSpacerHeight, padding: 0, border: 0 }} />
+                        </tr>
+                      )}
                       {sortedMatches.length === 0 && (
                         <tr>
                           <td colSpan={10}>
@@ -3593,7 +3610,10 @@ export default function HomePage() {
               <button
                 type="button"
                 className={`platform-nav-pill platform-nav-pill--settings ${activeView === "configuracoes" ? "active" : ""}`}
-                onClick={() => setActiveView("configuracoes")}
+                onClick={() => {
+                  setActiveView("configuracoes");
+                  syncSettingsUrl(settingsTab);
+                }}
               >
                 Configurações
                 {currentUser.role === "admin" && pendingCount > 0 && (

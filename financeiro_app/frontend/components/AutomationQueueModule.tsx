@@ -66,7 +66,7 @@ const STATUS_ACCENTS: Record<string, string> = {
 
 const PRIORITY_ACCENTS: Record<string, string> = {
   baixa: "#94a3b8",
-  normal: "#5eb3ff",
+  normal: "#d9f99d",
   alta: "#fb923c",
   urgente: "#f87171",
 };
@@ -438,7 +438,7 @@ export function AutomationQueueModule({
                         <span className="fila-status-pill" style={{ "--fila-accent": STATUS_ACCENTS[ticket.status] || "#94a3b8" } as CSSProperties}>
                           {ticket.status_label}
                         </span>
-                        <span className="fila-priority-pill" style={{ "--fila-accent": PRIORITY_ACCENTS[ticket.priority] || "#5eb3ff" } as CSSProperties}>
+                        <span className="fila-priority-pill" style={{ "--fila-accent": PRIORITY_ACCENTS[ticket.priority] || "#d9f99d" } as CSSProperties}>
                           {ticket.priority_label}
                         </span>
                         <span>{ticket.request_sector_label}</span>
@@ -479,7 +479,7 @@ export function AutomationQueueModule({
                     <span className="fila-status-pill" style={{ "--fila-accent": STATUS_ACCENTS[selectedTicket.status] || "#94a3b8" } as CSSProperties}>
                       {selectedTicket.status_label}
                     </span>
-                    <span className="fila-priority-pill" style={{ "--fila-accent": PRIORITY_ACCENTS[selectedTicket.priority] || "#5eb3ff" } as CSSProperties}>
+                    <span className="fila-priority-pill" style={{ "--fila-accent": PRIORITY_ACCENTS[selectedTicket.priority] || "#d9f99d" } as CSSProperties}>
                       {selectedTicket.priority_label}
                     </span>
                   </div>

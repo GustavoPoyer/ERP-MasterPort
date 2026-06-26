@@ -13,16 +13,18 @@
   --primary-strong: #000000;
   --kivo-accent: #d9f99d;
   --kivo-accent-strong: #bef264;
-  --glow-blue: #5eb3ff;
-  --glow-blue-strong: #3b82f6;
-  --glass-bg: rgba(255, 255, 255, 0.055);
-  --glass-bg-hover: rgba(255, 255, 255, 0.09);
-  --glass-bg-strong: rgba(255, 255, 255, 0.1);
-  --glass-border: rgba(255, 255, 255, 0.14);
-  --glass-border-strong: rgba(255, 255, 255, 0.22);
-  --glass-blur: blur(22px) saturate(165%);
-  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.42);
-  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --glow-blue: var(--kivo-accent);
+  --glow-blue-strong: var(--kivo-accent-strong);
+  --glass-bg: rgba(255, 255, 255, 0.12);
+  --glass-bg-hover: rgba(255, 255, 255, 0.18);
+  --glass-bg-strong: rgba(255, 255, 255, 0.22);
+  --glass-border: rgba(255, 255, 255, 0.24);
+  --glass-border-strong: rgba(255, 255, 255, 0.32);
+  --glass-blur: blur(32px) saturate(180%);
+  --glass-shadow: 0 24px 64px rgba(15, 23, 42, 0.14);
+  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  --kivo-glass-panel: rgba(22, 24, 32, 0.48);
+  --kivo-glass-panel-strong: rgba(28, 30, 40, 0.62);
   --kivo-canvas-w: 1920px;
   --kivo-canvas-h: 1080px;
   --kivo-hud-max-w: 1760px;
@@ -38,7 +40,7 @@ body {
   color: var(--text);
   font-family: var(--font-inter), "Segoe UI", Arial, sans-serif;
   min-height: 100vh;
-  background-color: #000000;
+  background-color: #d8dee8;
   position: relative;
 }
 
@@ -48,7 +50,27 @@ html:has(.platform-shell) body {
   overflow: hidden;
 }
 
-/* Fundos em camadas — crossfade fluido entre degrade e configurações */
+/* Visitante (landing/login) — visual original escuro */
+html:not(:has(.platform-shell)) body {
+  background-color: #000000;
+}
+
+html:not(:has(.platform-shell)) .kivo-bg-layer--degrade {
+  background-image: url("/brand/fundo-degrade.png");
+}
+
+.lp-shell,
+.auth-screen {
+  --glass-bg: rgba(255, 255, 255, 0.055);
+  --glass-bg-hover: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-border-strong: rgba(255, 255, 255, 0.22);
+  --glass-blur: blur(22px) saturate(165%);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.42);
+  --glass-inset: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Fundos em camadas — gradientes sem imagem */
 .kivo-bg-root {
   position: fixed;
   inset: 0;
@@ -63,26 +85,46 @@ html:has(.platform-shell) body {
   background-size: cover;
   background-position: center center;
   background-repeat: no-repeat;
-  transition: opacity 1.35s cubic-bezier(0.25, 0.85, 0.3, 1);
-  will-change: opacity;
-}
-
-@media (min-width: 1280px) {
-  .kivo-bg-layer {
-    background-size: cover;
-    background-position: center center;
-  }
+  transition: opacity var(--kivo-duration-bg) var(--kivo-ease);
 }
 
 .kivo-bg-layer--degrade {
-  background-image: url("/brand/fundo-degrade.png");
+  background-image:
+    radial-gradient(ellipse 85% 60% at 12% 8%, rgba(217, 249, 157, 0.42), transparent 58%),
+    radial-gradient(ellipse 70% 55% at 88% 18%, rgba(147, 197, 253, 0.35), transparent 55%),
+    radial-gradient(ellipse 65% 50% at 50% 100%, rgba(196, 181, 253, 0.22), transparent 52%),
+    linear-gradient(155deg, #eef2f8 0%, #dde4ef 38%, #cfd7e4 100%);
   opacity: 1;
+}
+
+.kivo-bg-layer--home {
+  background-image:
+    radial-gradient(ellipse 62% 50% at 84% 6%, rgba(255, 252, 245, 0.98), transparent 64%),
+    radial-gradient(ellipse 48% 40% at 8% 14%, rgba(255, 255, 255, 0.82), transparent 60%),
+    radial-gradient(ellipse 90% 60% at 50% 110%, rgba(90, 82, 72, 0.22), transparent 58%),
+    radial-gradient(ellipse 40% 30% at 30% 70%, rgba(110, 194, 255, 0.08), transparent 55%),
+    linear-gradient(168deg, #e8e4dc 0%, #d4cec4 32%, #c2bab0 62%, #aea69c 100%);
+  opacity: 0;
 }
 
 .kivo-bg-layer--config {
   background-image:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, rgba(0, 0, 0, 0.5) 100%),
-    url("/brand/fundo-configuracoes.png");
+    radial-gradient(ellipse 75% 55% at 50% 0%, rgba(147, 197, 253, 0.38), transparent 55%),
+    radial-gradient(ellipse 60% 45% at 100% 80%, rgba(217, 249, 157, 0.2), transparent 50%),
+    linear-gradient(160deg, #e8edf5 0%, #d8e0ec 48%, #ccd4e2 100%);
+  opacity: 0;
+}
+
+.kivo-bg-layer--ambient {
+  background-image:
+    linear-gradient(
+      180deg,
+      rgba(14, 16, 24, 0.08) 0%,
+      rgba(14, 16, 24, 0.04) 42%,
+      rgba(14, 16, 24, 0.16) 100%
+    ),
+    radial-gradient(ellipse 70% 50% at 50% 0%, rgba(217, 249, 157, 0.06), transparent 58%),
+    url("/brand/fundo-sala-moderna.png");
   opacity: 0;
 }
 
@@ -90,7 +132,21 @@ html[data-kivo-bg="config"] .kivo-bg-layer--degrade {
   opacity: 0;
 }
 
+html[data-kivo-bg="config"] .kivo-bg-layer--home {
+  opacity: 0;
+}
+
 html[data-kivo-bg="config"] .kivo-bg-layer--config {
+  opacity: 1;
+}
+
+html[data-kivo-bg="ambient"] .kivo-bg-layer--degrade,
+html[data-kivo-bg="ambient"] .kivo-bg-layer--home,
+html[data-kivo-bg="ambient"] .kivo-bg-layer--config {
+  opacity: 0;
+}
+
+html[data-kivo-bg="ambient"] .kivo-bg-layer--ambient {
   opacity: 1;
 }
 
@@ -100,9 +156,18 @@ html[data-kivo-bg="config"] .kivo-bg-layer--config {
   }
 }
 
-body > *:not(.kivo-bg-root) {
+body > *:not(.kivo-bg-root):not(.platform-operacoes-modal-backdrop):not(.rh-modal-backdrop):not(.settings-modal-backdrop):not(.settings-toast-stack) {
   position: relative;
   z-index: 1;
+}
+
+body > .platform-operacoes-modal-backdrop,
+body > .rh-modal-backdrop,
+body > .settings-modal-backdrop,
+body > .settings-toast-stack {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
 }
 
 .lp-shell,
@@ -1820,8 +1885,8 @@ body > *:not(.kivo-bg-root) {
   --text: #f4f4f5;
   --muted: #9ca3af;
   --line: rgba(255, 255, 255, 0.12);
-  --primary: var(--glow-blue);
-  --primary-strong: var(--glow-blue-strong);
+  --primary: var(--kivo-accent);
+  --primary-strong: var(--kivo-accent-strong);
   min-height: 100dvh;
   display: flex;
   justify-content: center;
@@ -1854,12 +1919,14 @@ body > *:not(.kivo-bg-root) {
   flex-direction: column;
   align-items: center;
   padding: 18px 12px;
-  border: 1px solid var(--glass-border);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(26px) saturate(160%);
-  -webkit-backdrop-filter: blur(26px) saturate(160%);
-  box-shadow: var(--glass-shadow), var(--glass-inset);
+  background: rgba(22, 24, 32, 0.5);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  box-shadow:
+    0 20px 56px rgba(15, 23, 42, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
   align-self: stretch;
 }
 
@@ -1910,10 +1977,12 @@ body > *:not(.kivo-bg-root) {
 }
 
 .platform-rail-btn.active {
-  color: #ffffff;
-  background: rgba(94, 179, 255, 0.2);
-  border-color: rgba(94, 179, 255, 0.45);
-  box-shadow: 0 0 16px rgba(94, 179, 255, 0.2);
+  color: #0a0a0a;
+  background: rgba(217, 249, 157, 0.9);
+  border-color: rgba(217, 249, 157, 0.55);
+  box-shadow:
+    0 0 18px rgba(217, 249, 157, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .platform-dashboard-wrap {
@@ -1931,18 +2000,19 @@ body > *:not(.kivo-bg-root) {
 }
 
 .platform-dashboard {
-  --kivo-pane-surface: rgba(22, 22, 26, 0.55);
-  --kivo-pane-loader-bg: rgba(22, 22, 26, 0.82);
+  --kivo-pane-surface: var(--kivo-glass-panel);
+  --kivo-pane-loader-bg: rgba(24, 26, 34, 0.72);
   position: relative;
   z-index: 10;
   border: 1px solid var(--glass-border);
-  border-radius: clamp(32px, 2.4vw, 42px);
+  border-radius: clamp(28px, 2.2vw, 36px);
   background: var(--kivo-pane-surface);
-  backdrop-filter: blur(28px) saturate(170%);
-  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(40px) saturate(185%);
+  -webkit-backdrop-filter: blur(40px) saturate(185%);
   box-shadow:
-    0 32px 80px rgba(0, 0, 0, 0.55),
-    var(--glass-inset);
+    var(--glass-shadow),
+    var(--glass-inset),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
   padding: 26px 28px 72px;
   flex: 1 1 0;
   min-height: 0;
@@ -1984,15 +2054,15 @@ body > *:not(.kivo-bg-root) {
 }
 
 .platform-page-header--animate {
-  animation: platform-header-in 0.55s cubic-bezier(0.25, 0.85, 0.3, 1) both;
+  animation: platform-header-in var(--kivo-duration-enter) var(--kivo-ease) both;
 }
 
 .platform-view-pane {
-  --platform-ease: cubic-bezier(0.25, 0.85, 0.3, 1);
-  --platform-expand-dur: 0.35s;
-  --platform-part-dur: 0.5s;
-  --platform-stagger: 0.09s;
-  --platform-stagger-start: 0.3s;
+  --platform-ease: var(--kivo-ease);
+  --platform-expand-dur: var(--kivo-duration-base);
+  --platform-part-dur: var(--kivo-duration-enter);
+  --platform-stagger: 0.04s;
+  --platform-stagger-start: 0.06s;
   flex: 1 1 0;
   min-height: 0;
   min-width: 0;
@@ -2004,12 +2074,13 @@ body > *:not(.kivo-bg-root) {
 }
 
 .platform-view-pane--financeiro {
-  --platform-expand-dur: 1.15s;
-  --platform-stagger-start: 0.4s;
+  --platform-expand-dur: var(--kivo-duration-enter);
+  --platform-stagger-start: 0.08s;
 }
 
 .platform-view-pane--configuracoes {
-  --platform-expand-dur: 1.05s;
+  --platform-expand-dur: var(--kivo-duration-enter);
+  --platform-stagger-start: 0.06s;
   overflow: visible;
   flex: 0 1 auto;
   min-height: min-content;
@@ -2062,7 +2133,7 @@ body > *:not(.kivo-bg-root) {
 }
 
 .platform-view-pane--configuracoes .platform-settings-block {
-  animation: platform-sector-fade 0.4s var(--platform-ease) both;
+  animation: platform-sector-fade var(--kivo-duration-fast) var(--platform-ease) both;
 }
 
 @keyframes platform-sector-fade {
@@ -2170,7 +2241,7 @@ body > *:not(.kivo-bg-root) {
 @keyframes platform-header-in {
   from {
     opacity: 0;
-    transform: translateY(-8px);
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;
@@ -2180,8 +2251,8 @@ body > *:not(.kivo-bg-root) {
 
 @keyframes platform-sector-expand {
   from {
-    opacity: 0.55;
-    transform: translateY(6px);
+    opacity: 0.72;
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -2192,7 +2263,7 @@ body > *:not(.kivo-bg-root) {
 @keyframes platform-sector-part {
   from {
     opacity: 0;
-    transform: translateY(12px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -2274,6 +2345,28 @@ body > *:not(.kivo-bg-root) {
 }
 
 /* Operações — conteúdo alinhado ao topo */
+.platform-dashboard--operacoes {
+  --kivo-pane-surface: rgba(20, 22, 30, 0.44);
+  --kivo-pane-loader-bg: rgba(24, 26, 34, 0.68);
+  padding-top: 14px;
+}
+
+.platform-dashboard--operacoes > .platform-page-header {
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.platform-dashboard--operacoes > .platform-page-header .platform-tag {
+  padding: 5px 9px;
+  font-size: 0.62rem;
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.platform-dashboard--operacoes > .platform-page-header .platform-subtitle {
+  color: #b4bcc8;
+}
+
 .platform-dashboard--operacoes > .platform-view-pane--operacoes {
   justify-content: flex-start !important;
   align-items: flex-start !important;
@@ -2281,13 +2374,14 @@ body > *:not(.kivo-bg-root) {
 }
 
 .platform-dashboard--operacoes > .platform-view-pane--operacoes > .platform-operacoes {
-  flex: 0 0 auto !important;
+  flex: 1 1 auto !important;
   justify-content: flex-start !important;
   align-self: stretch !important;
   width: 100%;
   max-width: 100%;
   margin: 0;
   min-height: 0;
+  display: flex;
 }
 
 .platform-dashboard--module .platform-sector-empty {
@@ -2869,9 +2963,9 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 
 .rh-event-type--ferias,
 .rh-event-type--ferias.rh-calendar-pill {
-  border-color: rgba(94, 179, 255, 0.35);
-  background: rgba(94, 179, 255, 0.14);
-  color: #bfdbfe;
+  border-color: rgba(217, 249, 157, 0.35);
+  background: rgba(217, 249, 157, 0.12);
+  color: #d9f99d;
 }
 
 .rh-event-type--folha,
@@ -4705,44 +4799,126 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 .platform-operacoes {
   display: flex;
   flex-direction: column;
-  gap: 14px;
   width: 100%;
   max-width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
   text-align: left;
-  align-items: stretch;
-  justify-content: flex-start;
-  flex: 0 0 auto;
-  align-self: flex-start;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-  box-shadow: none;
 }
 
-.platform-operacoes-page-head {
+.platform-operacoes-shell {
+  --op-surface: rgba(255, 255, 255, 0.08);
+  --op-surface-soft: rgba(255, 255, 255, 0.06);
+  --op-surface-raised: rgba(255, 255, 255, 0.11);
+  --op-input-bg: rgba(12, 14, 20, 0.35);
+  --op-border: rgba(255, 255, 255, 0.2);
+  --op-border-soft: rgba(255, 255, 255, 0.12);
+  --op-text-muted: #d1d8e6;
+  --op-text-soft: #b4bece;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid var(--op-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
+    var(--op-surface);
+  backdrop-filter: blur(28px) saturate(175%);
+  -webkit-backdrop-filter: blur(28px) saturate(175%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 18px 48px rgba(15, 23, 42, 0.12);
+}
+
+.platform-operacoes-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px 16px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  gap: 10px 14px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--op-border-soft);
+  background: var(--op-surface-soft);
 }
 
-.platform-operacoes-page-head-text h2 {
+.platform-operacoes-bar-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  min-width: 0;
+}
+
+.platform-operacoes-bar-meta {
+  font-size: 0.72rem;
+  color: var(--op-text-soft);
+  white-space: nowrap;
+}
+
+.platform-operacoes-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 22px 18px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.platform-operacoes-hero-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px 20px;
+}
+
+.platform-operacoes-eyebrow {
+  display: inline-block;
+  margin-bottom: 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kivo-accent);
+}
+
+.platform-operacoes-lead {
   margin: 0;
-  font-size: 1rem;
+  font-size: 0.86rem;
+  color: #a1a1aa;
+  max-width: 36rem;
+}
+
+.platform-operacoes-hero-stats {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.platform-operacoes-stat {
+  min-width: 88px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  text-align: center;
+}
+
+.platform-operacoes-stat strong {
+  display: block;
+  font-size: 1.25rem;
   font-weight: 700;
   color: #fafafa;
-  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
 
-.platform-operacoes-page-head-text p {
-  margin: 2px 0 0;
-  font-size: 0.72rem;
+.platform-operacoes-stat span {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.66rem;
   color: #71717a;
 }
 
@@ -4758,7 +4934,20 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 10px 16px;
+  padding: 12px 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.platform-operacoes-toolbar-label {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #71717a;
+}
+
+.platform-operacoes-toolbar-label strong {
+  color: #e4e4e7;
 }
 
 .platform-operacoes-toolbar-stats {
@@ -4767,11 +4956,6 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   gap: 10px;
   font-size: 0.72rem;
   color: #71717a;
-}
-
-.platform-operacoes-toolbar-stats strong {
-  color: #e4e4e7;
-  font-weight: 700;
 }
 
 .platform-operacoes-toolbar-divider {
@@ -4801,9 +4985,9 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 }
 
 .platform-operacoes-btn--ghost {
-  color: #a1a1aa;
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--op-text-muted);
+  background: rgba(255, 255, 255, 0.07);
+  border-color: var(--op-border-soft);
 }
 
 .platform-operacoes-btn--ghost:hover {
@@ -4819,6 +5003,100 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 
 .platform-operacoes-btn--primary:hover {
   filter: brightness(1.05);
+}
+
+.platform-operacoes-body {
+  display: grid;
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr);
+  gap: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.platform-operacoes-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 14px;
+  border-right: 1px solid var(--op-border-soft);
+  background: rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.platform-operacoes-sidebar-title {
+  margin: 0 0 4px;
+  padding: 0 8px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--op-text-soft);
+}
+
+.platform-operacoes-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.platform-operacoes-sidebar-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--op-text-muted);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.platform-operacoes-sidebar-item:hover {
+  color: #fafafa;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--op-border-soft);
+}
+
+.platform-operacoes-sidebar-item.is-active {
+  color: #fafafa;
+  background: rgba(217, 249, 157, 0.14);
+  border-color: rgba(217, 249, 157, 0.28);
+}
+
+.platform-operacoes-sidebar-count {
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--op-text-soft);
+}
+
+.platform-operacoes-sidebar-item.is-active .platform-operacoes-sidebar-count {
+  background: rgba(217, 249, 157, 0.18);
+  color: var(--kivo-accent);
+}
+
+.platform-operacoes-main {
+  min-width: 0;
+  padding: 16px 18px 20px;
+  overflow: auto;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .platform-operacoes-filters {
@@ -4879,6 +5157,8 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   display: flex;
   flex-direction: column;
   gap: 6px;
+  padding: 0 22px;
+  margin-top: 12px;
 }
 
 .platform-operacoes-alert {
@@ -4908,10 +5188,11 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 }
 
 .platform-operacoes-form-panel {
+  margin: 12px 22px 0;
   padding: 14px 16px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.32);
+  border: 1px solid var(--op-border-soft);
+  background: var(--op-surface-raised);
   max-width: 640px;
 }
 
@@ -4937,24 +5218,44 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   flex-direction: column;
   gap: 4px;
   font-size: 0.68rem;
-  color: #71717a;
+  color: var(--op-text-soft);
   font-weight: 600;
 }
 
 .platform-operacoes-optional {
   font-weight: 500;
-  color: #52525b;
+  color: var(--op-text-muted);
 }
 
 .platform-operacoes-form-panel input,
-.platform-operacoes-form-panel select {
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: #0c0c0c;
+.platform-operacoes-form-panel select,
+.platform-operacoes-form-panel textarea {
+  border-radius: 10px;
+  border: 1px solid var(--op-border-soft);
+  background: var(--op-input-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: #f4f4f5;
-  padding: 7px 10px;
+  padding: 8px 11px;
   font-family: inherit;
   font-size: 0.8rem;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.platform-operacoes-form-panel textarea {
+  resize: vertical;
+  min-height: 56px;
+  line-height: 1.45;
+}
+
+.platform-operacoes-form-panel input:focus,
+.platform-operacoes-form-panel select:focus,
+.platform-operacoes-form-panel textarea:focus {
+  outline: none;
+  border-color: rgba(217, 249, 157, 0.45);
+  box-shadow: 0 0 0 3px rgba(217, 249, 157, 0.1);
 }
 
 .platform-operacoes-form-actions {
@@ -4966,6 +5267,294 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.platform-operacoes-form-panel--modal {
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  max-width: none;
+}
+
+.platform-operacoes-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(214, 220, 232, 0.42);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  animation: platform-operacoes-modal-backdrop-in 0.2s ease both;
+}
+
+@keyframes platform-operacoes-modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.platform-operacoes-modal {
+  width: min(100%, 520px);
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 22px 24px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background:
+    radial-gradient(ellipse 100% 80% at 50% 0%, rgba(217, 249, 157, 0.16), transparent 55%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06)),
+    rgba(24, 26, 34, 0.72);
+  backdrop-filter: blur(36px) saturate(180%);
+  -webkit-backdrop-filter: blur(36px) saturate(180%);
+  box-shadow:
+    0 28px 72px rgba(15, 23, 42, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  animation: platform-operacoes-modal-in 0.24s cubic-bezier(0.34, 1.1, 0.64, 1) both;
+}
+
+.platform-operacoes-modal--automation {
+  width: min(100%, 980px);
+  max-height: min(92vh, 860px);
+}
+
+.platform-operacoes-modal-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(248px, 300px);
+  gap: 18px;
+  min-height: 0;
+  flex: 1 1 auto;
+  align-items: start;
+}
+
+.platform-operacoes-modal-editor {
+  min-width: 0;
+}
+
+.platform-operacoes-modal-preview-pane {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.platform-operacoes-preview-label {
+  margin: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.48);
+}
+
+.platform-operacoes-card-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.platform-operacoes-card--preview {
+  min-height: 0;
+  pointer-events: none;
+  user-select: none;
+  transform: none !important;
+  border-color: rgba(217, 249, 157, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 1px rgba(217, 249, 157, 0.08);
+}
+
+.platform-operacoes-card--preview:hover {
+  transform: none;
+  border-color: rgba(217, 249, 157, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 0 1px rgba(217, 249, 157, 0.08);
+}
+
+.platform-operacoes-card-preview-placeholder {
+  opacity: 0.45;
+  font-style: italic;
+}
+
+.platform-operacoes-card-actions--preview .platform-operacoes-card-edit,
+.platform-operacoes-card-actions--preview .platform-operacoes-card-remove {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.platform-operacoes-card-preview-empty-fields {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.platform-operacoes-card-preview-empty-fields p {
+  margin: 0;
+  font-size: 0.68rem;
+  line-height: 1.45;
+  color: var(--op-text-muted);
+  text-align: center;
+}
+
+.platform-operacoes-run-btn--preview {
+  opacity: 0.72;
+  cursor: default;
+}
+
+.platform-operacoes-card-preview-note {
+  margin: 0;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  color: var(--op-text-muted);
+  text-align: center;
+}
+
+@keyframes platform-operacoes-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.platform-operacoes-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-shrink: 0;
+}
+
+.platform-operacoes-modal-head-text {
+  min-width: 0;
+}
+
+.platform-operacoes-modal-head h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fafafa;
+  letter-spacing: -0.02em;
+}
+
+.platform-operacoes-modal-subtitle {
+  margin: 6px 0 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.58);
+  font-weight: 500;
+}
+
+.platform-operacoes-modal-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.platform-operacoes-modal-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+  margin-right: -4px;
+  scrollbar-gutter: stable;
+}
+
+.platform-operacoes-modal-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.platform-operacoes-modal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+}
+
+.platform-operacoes-modal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(217, 249, 157, 0.35);
+}
+
+.platform-operacoes-form-section {
+  margin-bottom: 4px;
+}
+
+.platform-operacoes-form-section-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.platform-operacoes-form-section-title {
+  margin: 0 0 10px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(217, 249, 157, 0.88);
+}
+
+.platform-operacoes-form-actions--sticky {
+  flex-shrink: 0;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, transparent, rgba(24, 26, 34, 0.55) 24%);
+}
+
+.platform-operacoes-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.platform-operacoes-modal .platform-operacoes-btn--ghost:hover:not(:disabled) {
+  color: #fafafa;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.platform-operacoes-modal .platform-operacoes-btn--primary:hover:not(:disabled) {
+  filter: brightness(1.06);
+  box-shadow: 0 0 0 1px rgba(217, 249, 157, 0.25);
+}
+
+.platform-operacoes-modal-close {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #a1a1aa;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.platform-operacoes-modal-close:hover {
+  color: #fafafa;
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .platform-operacoes-sections {
   display: flex;
   flex-direction: column;
@@ -4973,10 +5562,13 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 }
 
 .platform-operacoes-section {
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 12px;
-  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--op-border-soft);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   overflow: hidden;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 .platform-operacoes-section-head {
@@ -4984,61 +5576,75 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--op-border-soft);
+  background: rgba(255, 255, 255, 0.07);
 }
 
-.platform-operacoes-section-head h3 {
+.platform-operacoes-section-head-text h3 {
   margin: 0;
-  font-size: 0.82rem;
+  font-size: 0.92rem;
   font-weight: 700;
   color: #fafafa;
 }
 
-.platform-operacoes-section-head span {
+.platform-operacoes-section-head-text span {
   display: block;
-  margin-top: 1px;
-  font-size: 0.65rem;
-  color: #52525b;
+  margin-top: 2px;
+  font-size: 0.7rem;
+  color: var(--op-text-soft);
 }
 
 .platform-operacoes-section-add {
   flex-shrink: 0;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: transparent;
-  color: #a1a1aa;
-  border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 0.65rem;
+  border: 1px solid rgba(217, 249, 157, 0.22);
+  background: rgba(217, 249, 157, 0.06);
+  color: var(--kivo-accent);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.72rem;
   font-weight: 600;
   font-family: inherit;
   cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .platform-operacoes-section-add:hover {
-  color: var(--kivo-accent);
-  border-color: rgba(217, 249, 157, 0.25);
+  background: rgba(217, 249, 157, 0.12);
+  border-color: rgba(217, 249, 157, 0.35);
 }
 
 .platform-operacoes-section-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
   margin: 0;
-  padding: 16px 12px;
-  font-size: 0.72rem;
-  color: #52525b;
+  padding: 20px 16px;
+}
+
+.platform-operacoes-section-empty p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--op-text-muted);
 }
 
 .platform-operacoes-empty-state {
   padding: 24px 16px;
   text-align: center;
-  border: 1px dashed rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  border: 1px dashed var(--op-border-soft);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .platform-operacoes-empty-state p {
   margin: 0 0 6px;
   font-size: 0.82rem;
-  color: #a1a1aa;
+  color: var(--op-text-muted);
 }
 
 .platform-operacoes-flows--compact {
@@ -5049,14 +5655,34 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   max-width: 100%;
   padding: 3px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--op-border-soft);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.platform-operacoes-flows--hero {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  width: 100%;
+}
+
+.platform-operacoes-flows--hero .platform-operacoes-flow {
+  padding: 14px 16px;
+}
+
+.platform-operacoes-flows--hero .platform-operacoes-flow-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  font-size: 0.66rem;
 }
 
 .platform-operacoes-flow-tab {
   border: none;
   background: transparent;
-  color: #a1a1aa;
+  color: var(--op-text-muted);
   border-radius: 999px;
   padding: 5px 12px;
   font-size: 0.72rem;
@@ -5145,9 +5771,9 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 }
 
 .platform-operacoes-flow--exportacao .platform-operacoes-flow-icon {
-  color: #93c5fd;
-  background: rgba(94, 179, 255, 0.12);
-  border-color: rgba(94, 179, 255, 0.28);
+  color: var(--kivo-accent);
+  background: rgba(217, 249, 157, 0.12);
+  border-color: rgba(217, 249, 157, 0.28);
 }
 
 .platform-operacoes-flow-body {
@@ -5183,7 +5809,7 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 }
 
 .platform-operacoes-section .platform-operacoes-cards {
-  padding: 10px;
+  padding: 14px;
 }
 
 .platform-automation-access-grid {
@@ -5214,25 +5840,38 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 
 .platform-operacoes-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
 }
 
 .platform-operacoes-card {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: rgba(12, 12, 14, 0.65);
+  border: 1px solid var(--op-border-soft);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  transition: border-color 0.15s ease;
+  gap: 10px;
+  min-height: 168px;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
 }
 
 .platform-operacoes-card:hover {
-  border-color: rgba(217, 249, 157, 0.2);
+  border-color: rgba(217, 249, 157, 0.38);
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    0 14px 36px rgba(15, 23, 42, 0.14);
 }
 
 .platform-operacoes-card-head {
@@ -5259,8 +5898,8 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 .platform-operacoes-card-title-row h3 {
   margin: 0;
   min-width: 0;
-  font-size: 0.82rem;
-  line-height: 1.2;
+  font-size: 0.92rem;
+  line-height: 1.25;
   color: #fafafa;
   letter-spacing: -0.01em;
   white-space: nowrap;
@@ -5270,20 +5909,27 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 
 .platform-operacoes-card-desc {
   margin: 0;
-  font-size: 0.7rem;
-  line-height: 1.35;
-  color: #71717a;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--op-text-muted);
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
 .platform-operacoes-card-path {
-  display: block;
-  font-size: 0.65rem;
-  font-weight: 500;
-  color: #71717a;
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 600;
+  color: var(--op-text-soft);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--op-border-soft);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5314,18 +5960,346 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   background: rgba(252, 165, 165, 0.08);
 }
 
+.platform-operacoes-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.platform-operacoes-card-edit {
+  width: 22px;
+  height: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #71717a;
+  border-radius: 6px;
+  padding: 0;
+  font-size: 0.72rem;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.platform-operacoes-card-edit:hover {
+  color: var(--kivo-accent);
+  border-color: rgba(217, 249, 157, 0.35);
+  background: rgba(217, 249, 157, 0.08);
+}
+
+.platform-operacoes-card-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.platform-operacoes-card-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 0.68rem;
+  color: var(--op-text-soft);
+}
+
+.platform-operacoes-card-field > span {
+  font-weight: 600;
+  color: #d4d4d8;
+}
+
+.platform-operacoes-card-field input[type="text"] {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--op-border-soft);
+  background: rgba(0, 0, 0, 0.22);
+  color: #fafafa;
+  font-size: 0.76rem;
+  font-family: inherit;
+}
+
+.platform-operacoes-card-field input[type="text"]:focus {
+  outline: none;
+  border-color: rgba(217, 249, 157, 0.45);
+}
+
+.platform-operacoes-card-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.platform-operacoes-upload-btn--inline {
+  padding: 4px 10px;
+  min-height: 28px;
+}
+
+.platform-operacoes-required {
+  margin-left: 3px;
+  color: #fca5a5;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.platform-operacoes-field-builder {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.platform-operacoes-field-builder .platform-operacoes-form-section-title {
+  margin-bottom: 0;
+}
+
+.platform-operacoes-field-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: #0a0a0a;
+  background: rgba(217, 249, 157, 0.88);
+}
+
+.platform-operacoes-field-builder-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.platform-operacoes-field-builder-head h4 {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fafafa;
+}
+
+.platform-operacoes-field-builder-head p {
+  margin: 0;
+  font-size: 0.68rem;
+  color: var(--op-text-muted);
+  line-height: 1.4;
+}
+
+.platform-operacoes-field-builder-add {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.platform-operacoes-btn--sm {
+  padding: 4px 10px;
+  font-size: 0.68rem;
+}
+
+.platform-operacoes-field-builder-empty {
+  margin: 0;
+  padding: 18px 16px;
+  border-radius: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  background: rgba(0, 0, 0, 0.12);
+  text-align: center;
+}
+
+.platform-operacoes-field-builder-empty p {
+  margin: 0 0 8px;
+  font-size: 0.74rem;
+  color: var(--op-text-muted);
+}
+
+.platform-operacoes-field-builder-empty-hint {
+  margin: 0 0 12px !important;
+  font-size: 0.66rem !important;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.42) !important;
+}
+
+.platform-operacoes-field-advanced {
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.1);
+  padding: 8px 10px;
+}
+
+.platform-operacoes-field-advanced summary {
+  cursor: pointer;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--op-text-soft);
+  list-style: none;
+  user-select: none;
+}
+
+.platform-operacoes-field-advanced summary::-webkit-details-marker {
+  display: none;
+}
+
+.platform-operacoes-field-advanced[open] summary {
+  margin-bottom: 8px;
+  color: #d4d4d8;
+}
+
+.platform-operacoes-field-advanced label {
+  margin-top: 4px;
+}
+
+.platform-operacoes-field-builder-empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.platform-operacoes-field-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.platform-operacoes-field-index {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--op-text-muted);
+  letter-spacing: 0.02em;
+}
+
+.platform-operacoes-field-hint {
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--op-text-muted);
+  line-height: 1.3;
+}
+
+.platform-operacoes-field-check input[type="checkbox"] {
+  accent-color: var(--kivo-accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+.platform-operacoes-field-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.platform-operacoes-field-item {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--op-border-soft);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.platform-operacoes-field-item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.platform-operacoes-field-type {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.platform-operacoes-field-type--text {
+  color: #e4e4e7;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.platform-operacoes-field-type--file {
+  color: var(--kivo-accent);
+  background: rgba(217, 249, 157, 0.08);
+  border: 1px solid rgba(217, 249, 157, 0.2);
+}
+
+.platform-operacoes-field-item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.platform-operacoes-field-icon-btn {
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: transparent;
+  color: #a1a1aa;
+  border-radius: 6px;
+  padding: 0;
+  font-size: 0.72rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.platform-operacoes-field-icon-btn:hover:not(:disabled) {
+  color: #fafafa;
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.platform-operacoes-field-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.platform-operacoes-field-icon-btn--danger:hover:not(:disabled) {
+  color: #fca5a5;
+  border-color: rgba(252, 165, 165, 0.35);
+}
+
+.platform-operacoes-field-item-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+}
+
+.platform-operacoes-field-check {
+  display: inline-flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 6px !important;
+  font-size: 0.68rem !important;
+  color: var(--op-text-soft) !important;
+}
+
+.platform-operacoes-field-check input {
+  width: auto;
+  margin: 0;
+}
+
 .platform-operacoes-run-status {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
   margin: 0;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.68rem;
-  color: #a1a1aa;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(255, 255, 255, 0.02);
+  padding: 8px 10px;
+  border-radius: 10px;
+  font-size: 0.72rem;
+  color: var(--op-text-muted);
+  border: 1px solid var(--op-border-soft);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .platform-operacoes-download-btn {
@@ -5393,28 +6367,35 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 .platform-operacoes-card-footer {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   margin-top: auto;
-  padding-top: 6px;
+  padding-top: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .platform-operacoes-upload-btn {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  border: 1px dashed rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.03);
-  color: #a1a1aa;
-  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--op-text-muted);
+  font-size: 0.72rem;
   font-weight: 600;
   cursor: pointer;
   transition:
     border-color 0.15s ease,
     background 0.15s ease,
     color 0.15s ease;
+}
+
+.platform-operacoes-upload-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 .platform-operacoes-upload-btn:hover {
@@ -5424,8 +6405,8 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 }
 
 .platform-operacoes-files-count {
-  font-size: 0.65rem;
-  color: #52525b;
+  font-size: 0.72rem;
+  color: var(--op-text-soft);
   flex: 1;
   min-width: 0;
 }
@@ -5437,30 +6418,68 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 .platform-operacoes-run-btn {
   flex-shrink: 0;
   margin-left: auto;
-  border: 1px solid rgba(217, 249, 157, 0.25);
-  border-radius: 6px;
-  padding: 4px 10px;
-  font-size: 0.68rem;
+  border: 1px solid rgba(217, 249, 157, 0.3);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 0.74rem;
   font-weight: 700;
   font-family: inherit;
   cursor: pointer;
-  color: var(--kivo-accent);
-  background: rgba(217, 249, 157, 0.08);
+  color: #0a0a0a;
+  background: var(--kivo-accent);
   transition:
     background 0.15s ease,
     border-color 0.15s ease,
-    color 0.15s ease;
+    color 0.15s ease,
+    transform 0.15s ease;
 }
 
 .platform-operacoes-run-btn:hover:not(:disabled) {
-  color: #0a0a0a;
-  background: var(--kivo-accent);
-  border-color: rgba(217, 249, 157, 0.45);
+  filter: brightness(1.05);
+  transform: translateY(-1px);
 }
 
 .platform-operacoes-run-btn:disabled {
   opacity: 0.65;
   cursor: wait;
+}
+
+@media (max-width: 900px) {
+  .platform-operacoes-body {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-operacoes-modal-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-operacoes-modal-preview-pane {
+    position: static;
+    order: -1;
+    padding-bottom: 4px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .platform-operacoes-modal--automation {
+    width: min(100%, 680px);
+  }
+
+  .platform-operacoes-sidebar {
+    border-right: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    padding-bottom: 12px;
+  }
+
+  .platform-operacoes-sidebar-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .platform-operacoes-sidebar-item {
+    width: auto;
+    flex: 1 1 auto;
+    min-width: 120px;
+  }
 }
 
 @media (max-width: 640px) {
@@ -5476,9 +6495,34 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
     grid-template-columns: 1fr;
   }
 
-  .platform-operacoes-page-head {
-    flex-direction: column;
-    align-items: flex-start;
+  .platform-operacoes-bar,
+  .platform-operacoes-main {
+    padding-inline: 12px;
+  }
+
+  .platform-operacoes-bar-main {
+    width: 100%;
+  }
+
+  .platform-operacoes-bar-meta {
+    white-space: normal;
+  }
+
+  .platform-operacoes-toolbar-actions {
+    width: 100%;
+  }
+
+  .platform-operacoes-flows--hero {
+    grid-template-columns: 1fr;
+  }
+
+  .platform-operacoes-card-footer {
+    flex-wrap: wrap;
+  }
+
+  .platform-operacoes-run-btn {
+    width: 100%;
+    margin-left: 0;
   }
 }
 
@@ -5642,9 +6686,9 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 }
 
 .platform-rh-event-kind--ausencia {
-  color: #93c5fd;
-  border-color: rgba(94, 179, 255, 0.35);
-  background: rgba(94, 179, 255, 0.1);
+  color: #d9f99d;
+  border-color: rgba(217, 249, 157, 0.35);
+  background: rgba(217, 249, 157, 0.1);
 }
 
 .platform-rh-toolbar {
@@ -5845,9 +6889,9 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 
 .platform-rh-status-select--afastado,
 .platform-rh-status-select--ferias {
-  color: #93c5fd;
-  border-color: rgba(147, 197, 253, 0.35);
-  background-color: rgba(94, 179, 255, 0.1);
+  color: #d9f99d;
+  border-color: rgba(217, 249, 157, 0.35);
+  background-color: rgba(217, 249, 157, 0.1);
 }
 
 .platform-rh .btn-secondary {
@@ -6881,10 +7925,10 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   place-items: center;
   font-size: 0.85rem;
   font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, rgba(94, 179, 255, 0.5), rgba(59, 130, 246, 0.35));
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
+  color: #0a0a0a;
+  background: linear-gradient(135deg, rgba(217, 249, 157, 0.95), rgba(190, 242, 100, 0.85));
+  border: 1px solid rgba(217, 249, 157, 0.45);
+  box-shadow: 0 4px 16px rgba(217, 249, 157, 0.22);
 }
 
 .platform-page-header {
@@ -6910,12 +7954,14 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   gap: 8px;
   padding: 7px 8px 7px 10px;
   flex-wrap: nowrap;
-  border: 1px solid var(--glass-border);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 999px;
-  background: rgba(18, 18, 22, 0.72);
-  backdrop-filter: blur(24px) saturate(165%);
-  -webkit-backdrop-filter: blur(24px) saturate(165%);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45), var(--glass-inset);
+  background: rgba(22, 24, 32, 0.55);
+  backdrop-filter: blur(32px) saturate(180%);
+  -webkit-backdrop-filter: blur(32px) saturate(180%);
+  box-shadow:
+    0 20px 56px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
   z-index: 20;
 }
 
@@ -7091,14 +8137,14 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 }
 
 .sector-btn.active {
-  background: rgba(94, 179, 255, 0.14);
-  border-color: rgba(94, 179, 255, 0.38);
-  color: #ffffff;
-  box-shadow: 0 0 20px rgba(94, 179, 255, 0.12);
+  background: rgba(217, 249, 157, 0.14);
+  border-color: rgba(217, 249, 157, 0.38);
+  color: #0a0a0a;
+  box-shadow: 0 0 20px rgba(217, 249, 157, 0.12);
 }
 
 .sector-btn.active small {
-  color: #cbd5e1;
+  color: #3f3f46;
 }
 
 .sector-btn.active::before {
@@ -7199,10 +8245,11 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
 }
 
 .module-subnav-btn.active {
-  background: linear-gradient(135deg, rgba(94, 179, 255, 0.95), rgba(59, 130, 246, 0.95));
-  color: #ffffff;
+  background: linear-gradient(135deg, var(--kivo-accent) 0%, var(--kivo-accent-strong) 100%);
+  color: #0a0a0a;
   border-color: transparent;
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.35);
+  box-shadow: 0 4px 14px rgba(217, 249, 157, 0.24);
+  font-weight: 700;
 }
 
 .app-shell {
@@ -7241,13 +8288,13 @@ html[data-kivo-bg="config"] .platform-view-pane--configuracoes .platform-setting
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
+  border: 1px solid rgba(217, 249, 157, 0.35);
+  background: rgba(217, 249, 157, 0.12);
   border-radius: 999px;
   font-size: 0.64rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #2563eb;
+  color: #3f6212;
 }
 
 .kpi-grid {
@@ -7786,7 +8833,7 @@ tr.clickable {
 }
 
 .platform-shell .kpi-grid .kpi:nth-child(3)::after {
-  background: rgba(94, 179, 255, 0.5);
+  background: rgba(217, 249, 157, 0.5);
 }
 
 .platform-shell .kpi-grid .kpi:nth-child(4)::after {
@@ -7803,9 +8850,9 @@ tr.clickable {
 }
 
 .platform-shell .automation-item.active {
-  border-color: rgba(94, 179, 255, 0.45);
-  background: rgba(94, 179, 255, 0.12);
-  box-shadow: 0 0 20px rgba(94, 179, 255, 0.1);
+  border-color: rgba(217, 249, 157, 0.45);
+  background: rgba(217, 249, 157, 0.12);
+  box-shadow: 0 0 20px rgba(217, 249, 157, 0.1);
 }
 
 .platform-shell .app-shell--financeiro button:not(.btn-secondary):not(.btn-primary):not(.tab-btn):not(.upload-btn):not(.conciliacao-direcao-btn):not(.conciliacao-status-trigger):not(.conciliacao-status-option) {
@@ -7965,8 +9012,9 @@ tr.clickable {
 
 .conciliacao-edit-table .conciliacao-cell-input:focus {
   outline: none;
-  border-color: #2563eb;
+  border-color: rgba(217, 249, 157, 0.65);
   background: #fff;
+  box-shadow: 0 0 0 3px rgba(217, 249, 157, 0.15);
 }
 
 .conciliacao-edit-table .conciliacao-cell-input--date {
@@ -7977,6 +9025,13 @@ tr.clickable {
   min-width: 112px;
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.conciliacao-virtual-spacer td {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  pointer-events: none;
 }
 
 .conciliacao-valor-cell {
@@ -8132,7 +9187,7 @@ tr.clickable {
 }
 
 .platform-shell .conciliacao-sigra-link {
-  color: #2563eb;
+  color: var(--kivo-accent);
 }
 
 .platform-shell .conciliacao-edit-table .conciliacao-cell-input:hover:not(:disabled) {
@@ -8322,8 +9377,8 @@ tr.clickable {
 }
 
 .platform-shell .upload-btn:hover {
-  background: rgba(94, 179, 255, 0.1);
-  border-color: rgba(94, 179, 255, 0.28);
+  background: rgba(217, 249, 157, 0.1);
+  border-color: rgba(217, 249, 157, 0.32);
   color: #ffffff;
 }
 
@@ -8368,10 +9423,12 @@ tr.clickable {
 }
 
 .platform-shell .platform-rail-btn.active {
-  background: rgba(94, 179, 255, 0.2);
-  border-color: rgba(94, 179, 255, 0.4);
-  color: #fff;
-  box-shadow: 0 0 16px rgba(94, 179, 255, 0.15);
+  background: rgba(217, 249, 157, 0.9);
+  border-color: rgba(217, 249, 157, 0.55);
+  color: #0a0a0a;
+  box-shadow:
+    0 0 18px rgba(217, 249, 157, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .platform-shell .module-subnav-btn:not(.active),

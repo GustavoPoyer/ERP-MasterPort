@@ -20,6 +20,7 @@ from .services.automation_catalog import (
     ensure_global_automations,
     ensure_yaro_descricoes_automation,
 )
+from .services.operacoes_schema_presets import ensure_operacoes_automation_schemas
 from .services.rh_service import ensure_rh_seed_data
 from .services.run_service import mark_stale_runs_as_failed, recover_stale_runs_on_startup
 
@@ -89,6 +90,16 @@ def ensure_schema_compatibility() -> None:
                 conn.execute(text("UPDATE app_users SET approval_status = 'approved' WHERE approval_status IS NULL"))
             if "contact_email" not in user_columns:
                 conn.execute(text("ALTER TABLE app_users ADD COLUMN contact_email VARCHAR(180) NOT NULL DEFAULT ''"))
+            if "display_name" not in user_columns:
+                conn.execute(text("ALTER TABLE app_users ADD COLUMN display_name VARCHAR(120) NOT NULL DEFAULT ''"))
+            if "notify_email_pending" not in user_columns:
+                conn.execute(
+                    text("ALTER TABLE app_users ADD COLUMN notify_email_pending INTEGER NOT NULL DEFAULT 1")
+                )
+            if "notify_email_queue" not in user_columns:
+                conn.execute(
+                    text("ALTER TABLE app_users ADD COLUMN notify_email_queue INTEGER NOT NULL DEFAULT 0")
+                )
 
         if "automation_queue_tickets" in table_names:
             ticket_columns = {col["name"] for col in inspector.get_columns("automation_queue_tickets")}
@@ -120,6 +131,10 @@ def ensure_schema_compatibility() -> None:
                 conn.execute(
                     text("ALTER TABLE sector_automations ADD COLUMN visibility VARCHAR(20) NOT NULL DEFAULT 'flow'")
                 )
+            if "input_schema_json" not in auto_columns:
+                conn.execute(
+                    text("ALTER TABLE sector_automations ADD COLUMN input_schema_json TEXT NOT NULL DEFAULT '[]'")
+                )
 
 
 @app.on_event("startup")
@@ -138,6 +153,7 @@ def startup() -> None:
         ensure_default_sector_automations(db, settings.automation_workspace)
         ensure_yaro_descricoes_automation(db, settings.automation_workspace)
         ensure_global_automations(db, settings.automation_workspace)
+        ensure_operacoes_automation_schemas(db)
     finally:
         db.close()
     if settings.recover_interrupted_runs:

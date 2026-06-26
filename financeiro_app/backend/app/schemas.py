@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AutomationInfo(BaseModel):
@@ -23,9 +23,33 @@ class SectorAutomationRead(BaseModel):
     sort_order: int
     is_active: int
     created_by: str
+    input_schema: list[dict[str, Any]] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
+
+    @model_validator(mode="before")
+    @classmethod
+    def attach_input_schema(cls, data: Any) -> Any:
+        from .services.automation_form_schema import load_input_schema
+
+        if hasattr(data, "input_schema_json"):
+            return {
+                "id": data.id,
+                "sector": data.sector,
+                "flow": data.flow,
+                "client_slug": data.client_slug,
+                "visibility": data.visibility,
+                "key": data.key,
+                "name": data.name,
+                "description": data.description,
+                "script_path": data.script_path,
+                "sort_order": data.sort_order,
+                "is_active": data.is_active,
+                "created_by": data.created_by,
+                "input_schema": load_input_schema(data.input_schema_json),
+            }
+        return data
 
 
 class SectorAutomationCreate(BaseModel):
@@ -43,6 +67,7 @@ class SectorAutomationCreate(BaseModel):
         description="Rota relativa, ex.: automations/operacoes/importacao/yaro/run.py",
     )
     sort_order: int = Field(default=0, ge=0)
+    input_schema: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SectorAutomationUpdate(BaseModel):
@@ -53,6 +78,7 @@ class SectorAutomationUpdate(BaseModel):
     script_path: str | None = Field(default=None, min_length=8, max_length=500)
     sort_order: int | None = Field(default=None, ge=0)
     is_active: bool | None = None
+    input_schema: list[dict[str, Any]] | None = None
 
 
 class AutomationClientRead(BaseModel):
@@ -196,6 +222,9 @@ class RunDatasetRead(BaseModel):
     metric: RunMetricRead | None
     matches: list[RunMatchRowRead]
     statuses: list[RunStatusRowRead]
+    statuses_total: int = 0
+    matches_total: int = 0
+    status_month_counts: dict[str, int] = Field(default_factory=dict)
 
 
 class LoginRequest(BaseModel):
@@ -239,6 +268,53 @@ class UserProfile(BaseModel):
     username: str
     sector: str
     role: str
+    display_name: str = ""
+    contact_email: str = ""
+    notify_email_pending: bool = True
+    notify_email_queue: bool = False
+    created_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class UpdateProfileRequest(BaseModel):
+    display_name: str | None = Field(default=None, max_length=120)
+    contact_email: str | None = Field(default=None, max_length=180)
+
+
+class NotificationPreferencesUpdate(BaseModel):
+    notify_email_pending: bool | None = None
+    notify_email_queue: bool | None = None
+
+
+class AppInfoResponse(BaseModel):
+    api_version: str
+    environment: str
+    smtp_configured: bool
+
+
+class ActiveUserRead(BaseModel):
+    id: int
+    username: str
+    display_name: str
+    contact_email: str
+    sector: str
+    role: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AuditLogRead(BaseModel):
+    id: int
+    actor_username: str
+    action: str
+    target_type: str
+    target_label: str
+    details: str
+    created_at: datetime
 
     class Config:
         from_attributes = True

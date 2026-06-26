@@ -240,7 +240,10 @@ def extrair_itens(texto: str) -> list[dict]:
 
     for i, linha in enumerate(linhas):
         linha_limpa = normalizar_texto(linha)
-        if not linha_limpa or 'DESCRIPTION' in linha_limpa or 'New Tires' in linha_limpa:
+        if not linha_limpa or 'DESCRIPTION' in linha_limpa:
+            continue
+        # Cabeçalho da tabela; linhas de produto também podem conter "New Tires".
+        if 'New Tires' in linha_limpa and not ncm_re.search(linha_limpa):
             continue
         # Linha de totais da tabela (ex: 6,710  60,272.00  $126,858.90)
         if re.match(r'^[\d,]+\.?\d*\s+[\d,]+\.?\d*\s+\$[\d,]+\.?\d*$', linha_limpa):
@@ -3046,16 +3049,38 @@ def _imprimir_resumo(dados: dict) -> None:
     print("Valor total:", dados.get("totais", {}).get("valor_total"))
 
 
+def _import_runtime_paths():
+    ops_dir = Path(__file__).resolve().parents[3]
+    ops_path = str(ops_dir)
+    if ops_path not in sys.path:
+        sys.path.insert(0, ops_path)
+    from runtime_paths import get_form_value, get_slot_files, resolve_input_folder
+
+    return get_form_value, get_slot_files, resolve_input_folder
+
+
 def _executar_plataforma() -> None:
     """Processa PDF(s) enviados pelo card Operações e grava saída para download no site."""
-    input_folder = Path(os.environ["OPERACOES_INPUT_FOLDER"].strip())
+    get_form_value, get_slot_files, resolve_input_folder = _import_runtime_paths()
+
+    input_folder_raw = resolve_input_folder()
+    if not input_folder_raw:
+        raise FileNotFoundError("Pasta de entrada inválida (OPERACOES_INPUT_FOLDER).")
+    input_folder = Path(input_folder_raw)
     output_path = os.environ.get("OPERACOES_OUTPUT_PATH", "").strip()
-    fornecedor = os.environ.get("OPERACOES_FORNECEDOR", "auto").strip() or "auto"
+    fornecedor = (
+        get_form_value("fornecedor")
+        or os.environ.get("OPERACOES_FORNECEDOR", "auto").strip()
+        or "auto"
+    )
 
-    if not input_folder.is_dir():
-        raise FileNotFoundError(f"Pasta de entrada inválida: {input_folder}")
-
-    pdfs = _listar_pdfs_entrada(input_folder)
+    pdfs: list[Path] = []
+    for slot in ("fatura", "pdf", "arquivo", "anexo"):
+        pdfs = [Path(path) for path in get_slot_files(slot) if str(path).lower().endswith(".pdf")]
+        if pdfs:
+            break
+    if not pdfs:
+        pdfs = _listar_pdfs_entrada(input_folder)
     if not pdfs:
         raise FileNotFoundError("Anexe pelo menos um PDF de fatura comercial (.pdf).")
 

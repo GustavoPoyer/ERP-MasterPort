@@ -1,0 +1,21 @@
+/* KIVO motion — ágil, transições clean (visionOS) */
+
+:root {
+  --kivo-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --kivo-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --kivo-duration-instant: 0.12s;
+  --kivo-duration-fast: 0.16s;
+  --kivo-duration-base: 0.22s;
+  --kivo-duration-enter: 0.26s;
+  --kivo-duration-bg: 0.45s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --kivo-duration-instant: 0.01ms;
+    --kivo-duration-fast: 0.01ms;
+    --kivo-duration-base: 0.01ms;
+    --kivo-duration-enter: 0.01ms;
+    --kivo-duration-bg: 0.01ms;
+  }
+}

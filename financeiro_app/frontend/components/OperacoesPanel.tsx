@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { KivoLoader, waitMinLoaderTime } from "./KivoLoader";
+import { OperacoesFieldBuilder } from "./OperacoesFieldBuilder";
+import { OperacoesCardPreview } from "./OperacoesCardPreview";
+import {
+  resolveCardSchema,
+  type AutomationFormField,
+} from "../lib/operacoesAutomationSchema";
 
 export type OperationsView = "importacao" | "exportacao";
 
@@ -18,6 +25,7 @@ type SectorAutomation = {
   sort_order: number;
   is_active: number;
   created_by: string;
+  input_schema: AutomationFormField[];
 };
 
 type AutomationClient = {
@@ -41,6 +49,7 @@ type SectorRun = {
 type OperacoesPanelProps = {
   apiFetch: (path: string, init?: RequestInit) => Promise<Response>;
   operationsView: OperationsView;
+  onOperationsViewChange: (view: OperationsView) => void;
   username: string;
   isAdmin: boolean;
 };
@@ -50,6 +59,7 @@ type CardDraft = {
   description: string;
   script_path: string;
   client_slug: string;
+  fields: AutomationFormField[];
 };
 
 type ClientDraft = {
@@ -92,7 +102,57 @@ function isActiveRunStatus(status: string) {
   return normalized === "queued" || normalized === "running";
 }
 
-export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: OperacoesPanelProps) {
+type OperacoesFormModalProps = {
+  title: string;
+  subtitle?: string;
+  titleId: string;
+  variant?: "default" | "automation";
+  onClose: () => void;
+  children: ReactNode;
+};
+
+function OperacoesFormModal({
+  title,
+  subtitle,
+  titleId,
+  variant = "default",
+  onClose,
+  children,
+}: OperacoesFormModalProps) {
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="platform-operacoes-modal-backdrop" onClick={onClose} role="presentation">
+      <div
+        className={`platform-operacoes-modal ${variant === "automation" ? "platform-operacoes-modal--automation" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="platform-operacoes-modal-head">
+          <div className="platform-operacoes-modal-head-text">
+            <h3 id={titleId}>{title}</h3>
+            {subtitle ? <p className="platform-operacoes-modal-subtitle">{subtitle}</p> : null}
+          </div>
+          <button type="button" className="platform-operacoes-modal-close" onClick={onClose} aria-label="Fechar">
+            ×
+          </button>
+        </header>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export function OperacoesPanel({
+  apiFetch,
+  operationsView,
+  onOperationsViewChange,
+  username,
+  isAdmin,
+}: OperacoesPanelProps) {
   const apiFetchRef = useRef(apiFetch);
   apiFetchRef.current = apiFetch;
 
@@ -102,19 +162,46 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [formMode, setFormMode] = useState<"none" | "automation" | "client">("none");
+  const [formMode, setFormMode] = useState<"none" | "automation" | "edit-automation" | "client">("none");
+  const [editingCardId, setEditingCardId] = useState<number | null>(null);
   const [clientFilter, setClientFilter] = useState<ClientFilter>("all");
   const [draft, setDraft] = useState<CardDraft>({
     name: "",
     description: "",
     script_path: defaultScriptPath(operationsView, ""),
     client_slug: "",
+    fields: [],
   });
   const [clientDraft, setClientDraft] = useState<ClientDraft>({ name: "", slug: "" });
   const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [filesByCard, setFilesByCard] = useState<Record<string, File[]>>({});
+  const [textValuesByCard, setTextValuesByCard] = useState<Record<string, Record<string, string>>>({});
+  const [filesByCardSlot, setFilesByCardSlot] = useState<Record<string, Record<string, File[]>>>({});
+  const [savingForm, setSavingForm] = useState(false);
 
   const flowLabel = operationsView === "importacao" ? "Importação" : "Exportação";
+
+  function closeFormModal() {
+    setFormMode("none");
+    setEditingCardId(null);
+    setSavingForm(false);
+  }
+
+  useEffect(() => {
+    if (formMode === "none") return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeFormModal();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [formMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,7 +223,12 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
         if (!runsRes.ok) throw new Error(await parseError(runsRes, "Erro ao carregar execuções."));
         if (!clientsRes.ok) throw new Error(await parseError(clientsRes, "Erro ao carregar clientes."));
 
-        setCards((await cardsRes.json()) as SectorAutomation[]);
+        setCards(
+          ((await cardsRes.json()) as SectorAutomation[]).map((card) => ({
+            ...card,
+            input_schema: card.input_schema ?? [],
+          })),
+        );
         setRuns((await runsRes.json()) as SectorRun[]);
         setClients((await clientsRes.json()) as AutomationClient[]);
       } catch (err) {
@@ -174,10 +266,13 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
       description: "",
       script_path: defaultScriptPath(operationsView, ""),
       client_slug: "",
+      fields: [],
     });
     setFormMode("none");
+    setEditingCardId(null);
     setClientFilter("all");
-    setFilesByCard({});
+    setTextValuesByCard({});
+    setFilesByCardSlot({});
   }, [operationsView]);
 
   const latestRunByKey = useMemo(() => {
@@ -228,7 +323,7 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
     if (clientFilter === "all") {
       return {
         globals: grouped.globals,
-        clientSections: grouped.clientSections,
+        clientSections: grouped.clientSections.filter((section) => section.cards.length > 0),
         geralCards: grouped.geralCards,
       };
     }
@@ -245,10 +340,20 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
     };
   }, [clientFilter, grouped]);
 
+  const hasVisibleContent =
+    visibleSections.globals.length > 0 ||
+    visibleSections.clientSections.length > 0 ||
+    visibleSections.geralCards.length > 0;
+
   async function reloadCards() {
     const res = await apiFetchRef.current(`/sector-automations?sector=operacoes&flow=${operationsView}`);
     if (!res.ok) throw new Error(await parseError(res, "Erro ao carregar automações."));
-    setCards((await res.json()) as SectorAutomation[]);
+    setCards(
+      ((await res.json()) as SectorAutomation[]).map((card) => ({
+        ...card,
+        input_schema: card.input_schema ?? [],
+      })),
+    );
   }
 
   async function reloadClients() {
@@ -321,12 +426,27 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
   }
 
   function openAutomationForm(clientSlug = "") {
+    setEditingCardId(null);
     setFormMode("automation");
     setDraft({
       name: "",
       description: "",
       client_slug: clientSlug,
       script_path: defaultScriptPath(operationsView, clientSlug),
+      fields: [],
+    });
+    setError("");
+  }
+
+  function openEditForm(card: SectorAutomation) {
+    setEditingCardId(card.id);
+    setFormMode("edit-automation");
+    setDraft({
+      name: card.name,
+      description: card.description,
+      client_slug: card.client_slug,
+      script_path: card.script_path,
+      fields: (card.input_schema ?? []).map((field) => ({ ...field })),
     });
     setError("");
   }
@@ -335,6 +455,7 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
     e.preventDefault();
     setError("");
     setMessage("");
+    setSavingForm(true);
     const visibility = draft.client_slug ? "client" : "flow";
     const res = await apiFetchRef.current("/sector-automations", {
       method: "POST",
@@ -347,10 +468,12 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
         name: draft.name,
         description: draft.description,
         script_path: draft.script_path,
+        input_schema: draft.fields,
       }),
     });
     if (!res.ok) {
       setError(await parseError(res, "Não foi possível criar o card."));
+      setSavingForm(false);
       return;
     }
     setMessage(
@@ -359,8 +482,40 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
         : "Automação cadastrada.",
     );
     setFormMode("none");
+    setEditingCardId(null);
     if (draft.client_slug) setClientFilter(draft.client_slug);
     await reloadCards();
+    setSavingForm(false);
+  }
+
+  async function handleUpdateCard(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingCardId) return;
+    setError("");
+    setMessage("");
+    setSavingForm(true);
+    const res = await apiFetchRef.current(`/sector-automations/${editingCardId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: draft.name,
+        description: draft.description,
+        script_path: draft.script_path,
+        client_slug: draft.client_slug,
+        visibility: draft.client_slug ? "client" : "flow",
+        input_schema: draft.fields,
+      }),
+    });
+    if (!res.ok) {
+      setError(await parseError(res, "Não foi possível salvar a automação."));
+      setSavingForm(false);
+      return;
+    }
+    setMessage("Automação atualizada.");
+    setFormMode("none");
+    setEditingCardId(null);
+    await reloadCards();
+    setSavingForm(false);
   }
 
   async function handleCreateClient(e: React.FormEvent) {
@@ -390,11 +545,46 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
   }
 
   async function handleRun(card: SectorAutomation) {
-    const files = filesByCard[card.key] ?? [];
-    if (files.length === 0) {
-      setError("Anexe pelo menos um arquivo antes de executar.");
+    const schema = resolveCardSchema(card.input_schema);
+    const textValues = textValuesByCard[card.key] ?? {};
+    const fileSlots = filesByCardSlot[card.key] ?? {};
+
+    const parameters: Record<string, string> = {};
+    for (const field of schema) {
+      if (field.type !== "text") continue;
+      const value = (textValues[field.key] ?? field.default_value ?? "").trim();
+      if (field.required && !value) {
+        setError(`Preencha «${field.label}».`);
+        return;
+      }
+      parameters[field.key] = value;
+    }
+
+    const allFiles: File[] = [];
+    const slotKeys: string[] = [];
+    for (const field of schema) {
+      if (field.type !== "file") continue;
+      const files = fileSlots[field.key] ?? [];
+      if (field.required && files.length === 0) {
+        setError(`Anexe um arquivo em «${field.label}».`);
+        return;
+      }
+      if (!field.multiple && files.length > 1) {
+        setError(`«${field.label}» aceita apenas um arquivo.`);
+        return;
+      }
+      for (const file of files) {
+        allFiles.push(file);
+        slotKeys.push(field.key);
+      }
+    }
+
+    const hasRequiredFileFields = schema.some((field) => field.type === "file" && field.required);
+    if (hasRequiredFileFields && allFiles.length === 0) {
+      setError("Anexe os arquivos obrigatórios antes de executar.");
       return;
     }
+
     setBusyKey(card.key);
     setError("");
     setMessage("");
@@ -403,14 +593,16 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
       formData.append("automation_key", card.key);
       formData.append("sector", "operacoes");
       formData.append("triggered_by", username);
-      formData.append("parameters_json", "{}");
-      files.forEach((file) => formData.append("files", file));
+      formData.append("parameters_json", JSON.stringify(parameters));
+      allFiles.forEach((file) => formData.append("files", file));
+      slotKeys.forEach((slotKey) => formData.append("slot_keys", slotKey));
 
       const res = await apiFetchRef.current("/sector-runs/upload", { method: "POST", body: formData });
       if (!res.ok) throw new Error(await parseError(res, "Falha ao executar automação."));
       const created = (await res.json()) as SectorRun;
       setMessage(`Execução #${created.id} iniciada.`);
-      setFilesByCard((prev) => ({ ...prev, [card.key]: [] }));
+      setTextValuesByCard((prev) => ({ ...prev, [card.key]: {} }));
+      setFilesByCardSlot((prev) => ({ ...prev, [card.key]: {} }));
       await reloadRuns();
       await pollRunUntilDone(created.id, card.key);
     } catch (err) {
@@ -433,9 +625,15 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
 
   function renderCard(card: SectorAutomation) {
     const lastRun = latestRunByKey[card.key];
-    const files = filesByCard[card.key] ?? [];
+    const schema = resolveCardSchema(card.input_schema);
+    const textValues = textValuesByCard[card.key] ?? {};
+    const fileSlots = filesByCardSlot[card.key] ?? {};
     const scriptFile = card.script_path.split("/").pop() || card.script_path;
     const runStatus = lastRun?.status?.toLowerCase() ?? "";
+    const canManage = isAdmin || card.created_by === username;
+    const totalFiles = schema
+      .filter((field) => field.type === "file")
+      .reduce((sum, field) => sum + (fileSlots[field.key]?.length ?? 0), 0);
 
     return (
       <article key={card.id} className="platform-operacoes-card">
@@ -447,15 +645,26 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
                 {scriptFile}
               </code>
             </div>
-            {(isAdmin || card.created_by === username) && (
-              <button
-                type="button"
-                className="platform-operacoes-card-remove"
-                onClick={() => handleDeactivate(card)}
-                aria-label={`Remover ${card.name}`}
-              >
-                ×
-              </button>
+            {canManage && (
+              <div className="platform-operacoes-card-actions">
+                <button
+                  type="button"
+                  className="platform-operacoes-card-edit"
+                  onClick={() => openEditForm(card)}
+                  aria-label={`Editar ${card.name}`}
+                  title="Editar automação"
+                >
+                  ✎
+                </button>
+                <button
+                  type="button"
+                  className="platform-operacoes-card-remove"
+                  onClick={() => handleDeactivate(card)}
+                  aria-label={`Remover ${card.name}`}
+                >
+                  ×
+                </button>
+              </div>
             )}
           </div>
           {card.description ? <p className="platform-operacoes-card-desc">{card.description}</p> : null}
@@ -483,29 +692,88 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
           </div>
         )}
 
+        {schema.length > 0 && (
+          <div className="platform-operacoes-card-fields">
+            {schema.map((field) => {
+              if (field.type === "text") {
+                return (
+                  <label key={field.key} className="platform-operacoes-card-field">
+                    <span>
+                      {field.label}
+                      {field.required ? <em className="platform-operacoes-required">*</em> : null}
+                    </span>
+                    <input
+                      type="text"
+                      value={textValues[field.key] ?? field.default_value ?? ""}
+                      placeholder={field.placeholder || undefined}
+                      onChange={(e) =>
+                        setTextValuesByCard((prev) => ({
+                          ...prev,
+                          [card.key]: { ...(prev[card.key] ?? {}), [field.key]: e.target.value },
+                        }))
+                      }
+                    />
+                  </label>
+                );
+              }
+
+              const files = fileSlots[field.key] ?? [];
+              return (
+                <div key={field.key} className="platform-operacoes-card-field platform-operacoes-card-field--file">
+                  <span>
+                    {field.label}
+                    {field.required ? <em className="platform-operacoes-required">*</em> : null}
+                  </span>
+                  <div className="platform-operacoes-card-file-row">
+                    <label className="platform-operacoes-upload-btn platform-operacoes-upload-btn--inline">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                        <path d="M12 16V6m0 0l-3.5 3.5M12 6l3.5 3.5" />
+                        <path d="M5 16v2a2 2 0 002 2h10a2 2 0 002-2v-2" />
+                      </svg>
+                      <span className="platform-operacoes-upload-label">Anexar</span>
+                      <input
+                        type="file"
+                        multiple={field.multiple}
+                        accept={field.accept || undefined}
+                        hidden
+                        onChange={(e) => {
+                          const selected = e.target.files ? Array.from(e.target.files) : [];
+                          setFilesByCardSlot((prev) => ({
+                            ...prev,
+                            [card.key]: { ...(prev[card.key] ?? {}), [field.key]: selected },
+                          }));
+                        }}
+                      />
+                    </label>
+                    <span className={`platform-operacoes-files-count ${files.length > 0 ? "has-files" : ""}`}>
+                      {files.length === 0
+                        ? "Nenhum arquivo"
+                        : `${files.length} arquivo${files.length > 1 ? "s" : ""}`}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <footer className="platform-operacoes-card-footer">
-          <label className="platform-operacoes-upload-btn">
-            +
-            <input
-              type="file"
-              multiple
-              hidden
-              onChange={(e) => {
-                const selected = e.target.files ? Array.from(e.target.files) : [];
-                setFilesByCard((prev) => ({ ...prev, [card.key]: selected }));
-              }}
-            />
-          </label>
-          <span className={`platform-operacoes-files-count ${files.length > 0 ? "has-files" : ""}`}>
-            {files.length} arq.
-          </span>
+          {schema.length === 0 ? (
+            <span className="platform-operacoes-files-count">Sem campos de entrada</span>
+          ) : schema.every((field) => field.type === "text") ? (
+            <span className="platform-operacoes-files-count">Somente campos de texto</span>
+          ) : (
+            <span className={`platform-operacoes-files-count ${totalFiles > 0 ? "has-files" : ""}`}>
+              {totalFiles === 0 ? "Nenhum arquivo anexado" : `${totalFiles} arquivo${totalFiles > 1 ? "s" : ""} anexado${totalFiles > 1 ? "s" : ""}`}
+            </span>
+          )}
           <button
             type="button"
             className="platform-operacoes-run-btn"
             disabled={busyKey === card.key}
             onClick={() => handleRun(card)}
           >
-            {busyKey === card.key ? "…" : "Executar"}
+            {busyKey === card.key ? "Executando…" : "Executar"}
           </button>
         </footer>
       </article>
@@ -516,7 +784,7 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
     return (
       <section className="platform-operacoes-section" key={title}>
         <header className="platform-operacoes-section-head">
-          <div>
+          <div className="platform-operacoes-section-head-text">
             <h3>{title}</h3>
             <span>{meta}</span>
           </div>
@@ -525,233 +793,314 @@ export function OperacoesPanel({ apiFetch, operationsView, username, isAdmin }: 
             className="platform-operacoes-section-add"
             onClick={() => openAutomationForm(clientSlug ?? "")}
           >
-            + Automação
+            Nova automação
           </button>
         </header>
         {sectionCards.length > 0 ? (
           <div className="platform-operacoes-cards">{sectionCards.map(renderCard)}</div>
         ) : (
-          <p className="platform-operacoes-section-empty">Nenhuma automação cadastrada.</p>
+          <div className="platform-operacoes-section-empty">
+            <p>Nenhuma automação cadastrada.</p>
+            <button type="button" className="platform-operacoes-btn platform-operacoes-btn--ghost" onClick={() => openAutomationForm(clientSlug ?? "")}>
+              Criar primeira automação
+            </button>
+          </div>
         )}
       </section>
+    );
+  }
+
+  function renderClientFilter(id: ClientFilter, label: string, count: number) {
+    return (
+      <button
+        key={id}
+        type="button"
+        className={`platform-operacoes-sidebar-item ${clientFilter === id ? "is-active" : ""}`}
+        onClick={() => setClientFilter(id)}
+      >
+        <span>{label}</span>
+        <span className="platform-operacoes-sidebar-count">{count}</span>
+      </button>
     );
   }
 
   const totalAutomations = cards.length;
 
   return (
-    <div className="platform-operacoes-layout" aria-label={`Automações de ${flowLabel}`}>
-      <header className="platform-operacoes-toolbar">
-        <div className="platform-operacoes-toolbar-stats">
-          <span>
-            <strong>{clients.length}</strong> clientes
-          </span>
-          <span className="platform-operacoes-toolbar-divider" aria-hidden="true" />
-          <span>
-            <strong>{totalAutomations}</strong> automações
-          </span>
-        </div>
-        <div className="platform-operacoes-toolbar-actions">
-          {isAdmin && (
+    <section className="platform-operacoes" aria-label="Painel de operações">
+      <div className="platform-operacoes-shell panel">
+        <header className="platform-operacoes-bar">
+          <div className="platform-operacoes-bar-main">
+            <div className="platform-operacoes-flows platform-operacoes-flows--compact" role="tablist" aria-label="Equipes">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={operationsView === "importacao"}
+                className={`platform-operacoes-flow-tab ${operationsView === "importacao" ? "active" : ""}`}
+                onClick={() => onOperationsViewChange("importacao")}
+              >
+                Importação
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={operationsView === "exportacao"}
+                className={`platform-operacoes-flow-tab ${operationsView === "exportacao" ? "active" : ""}`}
+                onClick={() => onOperationsViewChange("exportacao")}
+              >
+                Exportação
+              </button>
+            </div>
+            <span className="platform-operacoes-bar-meta">
+              {clients.length} clientes · {totalAutomations} automações
+              {clientFilter !== "all" ? (
+                <>
+                  {" "}
+                  ·{" "}
+                  {clientFilter === "geral"
+                    ? "Geral da equipe"
+                    : clientFilter === "global"
+                      ? "Globais"
+                      : clients.find((c) => c.slug === clientFilter)?.name ?? clientFilter}
+                </>
+              ) : null}
+            </span>
+          </div>
+          <div className="platform-operacoes-toolbar-actions">
+            {isAdmin && (
+              <button
+                type="button"
+                className="platform-operacoes-btn platform-operacoes-btn--ghost"
+                onClick={() => setFormMode("client")}
+              >
+                + Cliente
+              </button>
+            )}
             <button
               type="button"
-              className="platform-operacoes-btn platform-operacoes-btn--ghost"
-              onClick={() => setFormMode((m) => (m === "client" ? "none" : "client"))}
+              className="platform-operacoes-btn platform-operacoes-btn--primary"
+              onClick={() => openAutomationForm()}
             >
-              {formMode === "client" ? "Fechar" : "+ Cliente"}
+              + Automação
             </button>
-          )}
-          <button
-            type="button"
-            className="platform-operacoes-btn platform-operacoes-btn--primary"
-            onClick={() => (formMode === "automation" ? setFormMode("none") : openAutomationForm())}
-          >
-            {formMode === "automation" ? "Fechar" : "+ Automação"}
-          </button>
-        </div>
-      </header>
+          </div>
+        </header>
 
-      <nav className="platform-operacoes-filters" aria-label="Filtrar por cliente">
-        <button
-          type="button"
-          className={`platform-operacoes-filter ${clientFilter === "all" ? "is-active" : ""}`}
-          onClick={() => setClientFilter("all")}
-        >
-          Todos
-          <span>{totalAutomations}</span>
-        </button>
-        {grouped.globals.length > 0 && (
-          <button
-            type="button"
-            className={`platform-operacoes-filter ${clientFilter === "global" ? "is-active" : ""}`}
-            onClick={() => setClientFilter("global")}
-          >
-            Globais
-            <span>{countsByClient.global}</span>
-          </button>
+        {(error || message) && (
+          <div className="platform-operacoes-alerts">
+            {error && <p className="platform-operacoes-alert platform-operacoes-alert--error">{error}</p>}
+            {message && <p className="platform-operacoes-alert platform-operacoes-alert--ok">{message}</p>}
+          </div>
         )}
-        {clients.map((client) => (
-          <button
-            key={client.id}
-            type="button"
-            className={`platform-operacoes-filter ${clientFilter === client.slug ? "is-active" : ""}`}
-            onClick={() => setClientFilter(client.slug)}
+
+        {loading && (
+          <div className="module-pane-loading module-pane-loading--compact" role="status" aria-live="polite">
+            <KivoLoader size="sm" showLabel label="Carregando automações…" />
+          </div>
+        )}
+
+        {formMode === "client" && isAdmin && (
+          <OperacoesFormModal title={`Novo cliente · ${flowLabel}`} titleId="operacoes-client-modal-title" onClose={closeFormModal}>
+            <form className="platform-operacoes-form-panel platform-operacoes-form-panel--modal" onSubmit={handleCreateClient}>
+              <div className="platform-operacoes-form-grid">
+                <label>
+                  Nome
+                  <input
+                    required
+                    autoFocus
+                    value={clientDraft.name}
+                    onChange={(e) => setClientDraft((d) => ({ ...d, name: e.target.value }))}
+                    placeholder="Yaro"
+                  />
+                </label>
+                <label>
+                  Slug <span className="platform-operacoes-optional">opcional</span>
+                  <input
+                    value={clientDraft.slug}
+                    onChange={(e) => setClientDraft((d) => ({ ...d, slug: e.target.value }))}
+                    placeholder="yaro"
+                  />
+                </label>
+              </div>
+              <div className="platform-operacoes-form-actions">
+                <button type="button" className="platform-operacoes-btn platform-operacoes-btn--ghost" onClick={closeFormModal}>
+                  Cancelar
+                </button>
+                <button type="submit" className="platform-operacoes-btn platform-operacoes-btn--primary">
+                  Salvar cliente
+                </button>
+              </div>
+            </form>
+          </OperacoesFormModal>
+        )}
+
+        {(formMode === "automation" || formMode === "edit-automation") && (
+          <OperacoesFormModal
+            title={formMode === "edit-automation" ? "Editar automação" : "Nova automação"}
+            subtitle={`${flowLabel} · defina metadados e campos que aparecem no card`}
+            titleId="operacoes-automation-modal-title"
+            variant="automation"
+            onClose={closeFormModal}
           >
-            {client.name}
-            <span>{countsByClient[client.slug] ?? 0}</span>
-          </button>
-        ))}
-        <button
-          type="button"
-          className={`platform-operacoes-filter ${clientFilter === "geral" ? "is-active" : ""}`}
-          onClick={() => setClientFilter("geral")}
-        >
-          Geral
-          <span>{countsByClient.geral}</span>
-        </button>
-      </nav>
+            <form
+              className="platform-operacoes-form-panel platform-operacoes-form-panel--modal platform-operacoes-modal-form"
+              onSubmit={formMode === "edit-automation" ? handleUpdateCard : handleCreateCard}
+            >
+              <div className="platform-operacoes-modal-layout">
+                <div className="platform-operacoes-modal-scroll platform-operacoes-modal-editor">
+                  <section className="platform-operacoes-form-section" aria-labelledby="operacoes-form-info">
+                    <h4 id="operacoes-form-info" className="platform-operacoes-form-section-title">
+                      Informações
+                    </h4>
+                    <div className="platform-operacoes-form-grid">
+                      <label>
+                        Nome
+                        <input
+                          required
+                          autoFocus
+                          value={draft.name}
+                          onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                          placeholder="Relatório DI"
+                        />
+                      </label>
+                      <label>
+                        Cliente
+                        <select
+                          value={draft.client_slug}
+                          onChange={(e) => {
+                            const client_slug = e.target.value;
+                            setDraft((d) => ({
+                              ...d,
+                              client_slug,
+                              script_path: defaultScriptPath(operationsView, client_slug),
+                            }));
+                          }}
+                        >
+                          <option value="">Geral da equipe</option>
+                          {clients.map((client) => (
+                            <option key={client.id} value={client.slug}>
+                              {client.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="platform-operacoes-form-span2">
+                        Rota do script
+                        <input
+                          required
+                          value={draft.script_path}
+                          onChange={(e) => setDraft((d) => ({ ...d, script_path: e.target.value }))}
+                          placeholder={`automations/operacoes/${operationsView}/yaro/run.py`}
+                        />
+                      </label>
+                      <label className="platform-operacoes-form-span2">
+                        Descrição <span className="platform-operacoes-optional">opcional</span>
+                        <textarea
+                          rows={2}
+                          value={draft.description}
+                          onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                          placeholder="O que esta rotina faz?"
+                        />
+                      </label>
+                    </div>
+                  </section>
 
-      {(error || message) && (
-        <div className="platform-operacoes-alerts">
-          {error && <p className="platform-operacoes-alert platform-operacoes-alert--error">{error}</p>}
-          {message && <p className="platform-operacoes-alert platform-operacoes-alert--ok">{message}</p>}
-        </div>
-      )}
+                  <OperacoesFieldBuilder
+                    fields={draft.fields}
+                    onChange={(fields) => setDraft((d) => ({ ...d, fields }))}
+                  />
+                </div>
 
-      {loading && (
-        <div className="module-pane-loading module-pane-loading--compact" role="status" aria-live="polite">
-          <KivoLoader size="sm" showLabel label="Carregando automações…" />
-        </div>
-      )}
+                <aside className="platform-operacoes-modal-preview-pane" aria-label="Pré-visualização do card">
+                  <p className="platform-operacoes-preview-label">Pré-visualização</p>
+                  <OperacoesCardPreview
+                    name={draft.name}
+                    description={draft.description}
+                    scriptPath={draft.script_path}
+                    fields={draft.fields}
+                  />
+                </aside>
+              </div>
 
-      {formMode === "client" && isAdmin && (
-        <form className="platform-operacoes-form-panel" onSubmit={handleCreateClient}>
-          <h3>Novo cliente · {flowLabel}</h3>
-          <div className="platform-operacoes-form-grid">
-            <label>
-              Nome
-              <input
-                required
-                value={clientDraft.name}
-                onChange={(e) => setClientDraft((d) => ({ ...d, name: e.target.value }))}
-                placeholder="Yaro"
-              />
-            </label>
-            <label>
-              Slug <span className="platform-operacoes-optional">opcional</span>
-              <input
-                value={clientDraft.slug}
-                onChange={(e) => setClientDraft((d) => ({ ...d, slug: e.target.value }))}
-                placeholder="yaro"
-              />
-            </label>
-          </div>
-          <div className="platform-operacoes-form-actions">
-            <button type="button" className="platform-operacoes-btn platform-operacoes-btn--ghost" onClick={() => setFormMode("none")}>
-              Cancelar
-            </button>
-            <button type="submit" className="platform-operacoes-btn platform-operacoes-btn--primary">
-              Salvar cliente
-            </button>
-          </div>
-        </form>
-      )}
+              <div className="platform-operacoes-form-actions platform-operacoes-form-actions--sticky">
+                <button
+                  type="button"
+                  className="platform-operacoes-btn platform-operacoes-btn--ghost"
+                  onClick={closeFormModal}
+                  disabled={savingForm}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="platform-operacoes-btn platform-operacoes-btn--primary"
+                  disabled={savingForm}
+                >
+                  {savingForm
+                    ? "Salvando…"
+                    : formMode === "edit-automation"
+                      ? "Salvar alterações"
+                      : "Salvar automação"}
+                </button>
+              </div>
+            </form>
+          </OperacoesFormModal>
+        )}
 
-      {formMode === "automation" && (
-        <form className="platform-operacoes-form-panel" onSubmit={handleCreateCard}>
-          <h3>Nova automação · {flowLabel}</h3>
-          <div className="platform-operacoes-form-grid">
-            <label>
-              Nome
-              <input
-                required
-                value={draft.name}
-                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                placeholder="Relatório DI"
-              />
-            </label>
-            <label>
-              Cliente
-              <select
-                value={draft.client_slug}
-                onChange={(e) => {
-                  const client_slug = e.target.value;
-                  setDraft((d) => ({
-                    ...d,
-                    client_slug,
-                    script_path: defaultScriptPath(operationsView, client_slug),
-                  }));
-                }}
-              >
-                <option value="">Geral da equipe</option>
-                {clients.map((client) => (
-                  <option key={client.id} value={client.slug}>
-                    {client.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="platform-operacoes-form-span2">
-              Rota do script
-              <input
-                required
-                value={draft.script_path}
-                onChange={(e) => setDraft((d) => ({ ...d, script_path: e.target.value }))}
-                placeholder={`automations/operacoes/${operationsView}/yaro/run.py`}
-              />
-            </label>
-            <label className="platform-operacoes-form-span2">
-              Descrição <span className="platform-operacoes-optional">opcional</span>
-              <input
-                value={draft.description}
-                onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
-                placeholder="O que esta rotina faz?"
-              />
-            </label>
-          </div>
-          <div className="platform-operacoes-form-actions">
-            <button type="button" className="platform-operacoes-btn platform-operacoes-btn--ghost" onClick={() => setFormMode("none")}>
-              Cancelar
-            </button>
-            <button type="submit" className="platform-operacoes-btn platform-operacoes-btn--primary">
-              Salvar automação
-            </button>
-          </div>
-        </form>
-      )}
+        {!loading && (
+          <div className="platform-operacoes-body">
+            <aside className="platform-operacoes-sidebar" aria-label="Filtrar por cliente">
+              <p className="platform-operacoes-sidebar-title">Clientes</p>
+              <nav className="platform-operacoes-sidebar-nav">
+                {renderClientFilter("all", "Todos", totalAutomations)}
+                {grouped.globals.length > 0 && renderClientFilter("global", "Globais", countsByClient.global)}
+                {clients.map((client) => renderClientFilter(client.slug, client.name, countsByClient[client.slug] ?? 0))}
+                {renderClientFilter("geral", "Geral da equipe", countsByClient.geral)}
+              </nav>
+            </aside>
 
-      {!loading && (
-        <div className="platform-operacoes-sections">
-          {visibleSections.globals.length > 0 &&
-            renderSection("Globais", "Todos os setores", visibleSections.globals)}
+            <div className="platform-operacoes-main">
+              <div className="platform-operacoes-sections">
+                {visibleSections.globals.length > 0 &&
+                  renderSection("Globais", "Todos os setores", visibleSections.globals)}
 
-          {visibleSections.clientSections.map((section) =>
-            renderSection(section.title, flowLabel, section.cards, section.slug),
-          )}
+                {visibleSections.clientSections.map((section) =>
+                  renderSection(section.title, flowLabel, section.cards, section.slug),
+                )}
 
-          {(clientFilter === "all" || clientFilter === "geral") &&
-            renderSection("Geral da equipe", "Sem cliente específico", visibleSections.geralCards)}
+                {(clientFilter === "all" || clientFilter === "geral") &&
+                  (clientFilter === "geral" || visibleSections.geralCards.length > 0) &&
+                  renderSection("Geral da equipe", "Sem cliente específico", visibleSections.geralCards)}
 
-          {totalAutomations === 0 && clients.length === 0 && clientFilter === "all" && (
-            <div className="platform-operacoes-empty-state">
-              <p>
-                Nenhum cliente nem automação em <b>{flowLabel}</b>.
-              </p>
-              {isAdmin && <p className="subtitle">Comece cadastrando um cliente, depois adicione automações.</p>}
+                {totalAutomations === 0 && clients.length === 0 && clientFilter === "all" && (
+                  <div className="platform-operacoes-empty-state">
+                    <p>
+                      Nenhum cliente nem automação em <b>{flowLabel}</b>.
+                    </p>
+                    {isAdmin && <p className="subtitle">Comece cadastrando um cliente, depois adicione automações.</p>}
+                  </div>
+                )}
+
+                {!isAdmin && cards.length === 0 && (clients.length > 0 || clientFilter !== "all") && (
+                  <div className="platform-operacoes-empty-state">
+                    <p>Nenhuma automação disponível para o seu usuário nesta equipe.</p>
+                    <p className="subtitle">
+                      Peça ao administrador para confirmar seu setor como <b>Operações</b> e liberar o cliente correto em
+                      Configurações → Acesso a clientes.
+                    </p>
+                  </div>
+                )}
+
+                {clientFilter !== "all" && !hasVisibleContent && totalAutomations > 0 && (
+                  <div className="platform-operacoes-empty-state">
+                    <p>Nenhuma automação neste filtro.</p>
+                  </div>
+                )}
+              </div>
             </div>
-          )}
-
-          {!isAdmin && cards.length === 0 && (clients.length > 0 || clientFilter !== "all") && (
-            <div className="platform-operacoes-empty-state">
-              <p>Nenhuma automação disponível para o seu usuário nesta equipe.</p>
-              <p className="subtitle">
-                Peça ao administrador para confirmar seu setor como <b>Operações</b> e liberar o cliente correto em
-                Configurações → Acesso a clientes.
-              </p>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
