@@ -21,6 +21,7 @@ import {
   syncSettingsUrl,
   type SettingsTab,
 } from "../components/settings/settingsTabUrl";
+import { KivoBootScreen, KIVO_BOOT_EXIT_MS, waitMinBootTime } from "../components/KivoBootScreen";
 import { KivoAssistant } from "../components/KivoAssistant";
 import { AutomationQueueModule } from "../components/AutomationQueueModule";
 import { OperacoesPanel } from "../components/OperacoesPanel";
@@ -720,6 +721,7 @@ function FilterSearchInput({
 
 export default function HomePage() {
   const [authReady, setAuthReady] = useState(false);
+  const [bootExiting, setBootExiting] = useState(false);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [guestView, setGuestView] = useState<"landing" | "auth" | "forgot" | "reset">("landing");
@@ -1985,6 +1987,8 @@ export default function HomePage() {
     let cancelled = false;
 
     async function bootstrapSession() {
+      const startedAt = Date.now();
+
       if (typeof window !== "undefined") {
         const params = new URLSearchParams(window.location.search);
         const resetFromUrl = params.get("reset");
@@ -2035,10 +2039,18 @@ export default function HomePage() {
         }
       }
 
+      await waitMinBootTime(startedAt);
+      if (!cancelled) {
+        setBootExiting(true);
+        await new Promise((resolve) => setTimeout(resolve, KIVO_BOOT_EXIT_MS));
+      }
       if (!cancelled) setAuthReady(true);
     }
 
-    bootstrapSession().catch(() => {
+    bootstrapSession().catch(async () => {
+      if (cancelled) return;
+      setBootExiting(true);
+      await new Promise((resolve) => setTimeout(resolve, KIVO_BOOT_EXIT_MS));
       if (!cancelled) setAuthReady(true);
     });
 
@@ -2284,14 +2296,7 @@ export default function HomePage() {
   }, []);
 
   if (!authReady) {
-    return (
-      <main className="app-shell">
-        <section className="panel">
-          <h2>Carregando...</h2>
-          <p className="subtitle">Preparando ambiente de autenticação.</p>
-        </section>
-      </main>
-    );
+    return <KivoBootScreen exiting={bootExiting} />;
   }
 
   if (!authToken || !currentUser) {
